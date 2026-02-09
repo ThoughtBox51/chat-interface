@@ -3,8 +3,24 @@
   background: #202123;
   display: flex;
   flex-direction: column;
-  padding: 8px;
   border-right: 1px solid #444654;
+}
+
+.sidebar-header {
+  padding: 16px 12px;
+  border-bottom: 1px solid #444654;
+}
+
+.logo-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  background: #10a37f;
+  border-radius: 8px;
+  color: white;
+  font-weight: 600;
+  font-size: 16px;
 }
 
 .new-chat-btn {
@@ -15,6 +31,7 @@
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
+  margin: 8px;
   margin-bottom: 8px;
   transition: background 0.2s;
 }
@@ -26,6 +43,7 @@
 .chat-list {
   flex: 1;
   overflow-y: auto;
+  padding: 0 8px;
 }
 
 .chat-item {
@@ -73,4 +91,42 @@
 
 .delete-btn:hover {
   color: #ececf1;
+}
+
+.sidebar-footer {
+  padding: 12px;
+  border-top: 1px solid #444654;
+}
+
+.user-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.user-profile:hover {
+  background: #2a2b32;
+}
+
+.avatar-placeholder {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #10a37f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.username {
+  color: #ececf1;
+  font-size: 14px;
+  font-weight: 500;
 }
