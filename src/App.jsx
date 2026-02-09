@@ -1,13 +1,29 @@
 import { useState } from 'react'
 import Sidebar from './components/Sidebar'
 import ChatWindow from './components/ChatWindow'
+import Login from './components/Login'
 import './App.css'
 
 function App() {
+  const [user, setUser] = useState(null)
   const [chats, setChats] = useState([
     { id: 1, title: 'New Chat', messages: [] }
   ])
   const [activeChat, setActiveChat] = useState(1)
+
+  const handleLogin = (userData) => {
+    setUser(userData)
+  }
+
+  const handleLogout = () => {
+    setUser(null)
+    setChats([{ id: 1, title: 'New Chat', messages: [] }])
+    setActiveChat(1)
+  }
+
+  if (!user) {
+    return <Login onLogin={handleLogin} />
+  }
 
   const createNewChat = () => {
     const newChat = {
@@ -65,6 +81,8 @@ function App() {
         onSelectChat={setActiveChat}
         onNewChat={createNewChat}
         onDeleteChat={deleteChat}
+        user={user}
+        onLogout={handleLogout}
       />
       <ChatWindow 
         chat={currentChat}

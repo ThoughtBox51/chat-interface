@@ -3,6 +3,7 @@ import './ChatWindow.css'
 
 function ChatWindow({ chat, onSendMessage }) {
   const [input, setInput] = useState('')
+  const [selectedModel, setSelectedModel] = useState('gpt-4')
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -23,6 +24,20 @@ function ChatWindow({ chat, onSendMessage }) {
 
   return (
     <div className="chat-window">
+      <div className="chat-header">
+        <select 
+          className="model-selector"
+          value={selectedModel}
+          onChange={(e) => setSelectedModel(e.target.value)}
+        >
+          <option value="gpt-4">GPT-4</option>
+          <option value="gpt-4-turbo">GPT-4 Turbo</option>
+          <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+          <option value="claude-3">Claude 3</option>
+          <option value="claude-2">Claude 2</option>
+        </select>
+      </div>
+
       <div className="messages">
         {chat?.messages.length === 0 ? (
           <div className="empty-state">

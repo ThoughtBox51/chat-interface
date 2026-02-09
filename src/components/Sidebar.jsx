@@ -1,6 +1,20 @@
+import { useState, useRef, useEffect } from 'react'
 import './Sidebar.css'
 
-function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat }) {
+function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, user, onLogout }) {
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setShowMenu(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -34,11 +48,28 @@ function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat }) {
         ))}
       </div>
 
-      <div className="sidebar-footer">
-        <div className="user-profile">
-          <div className="avatar-placeholder">U</div>
-          <span className="username">User</span>
+      <div className="sidebar-footer" ref={menuRef}>
+        <div className="user-profile" onClick={() => setShowMenu(!showMenu)}>
+          <div className="avatar-placeholder">
+            {user?.name?.charAt(0).toUpperCase() || 'U'}
+          </div>
+          <span className="username">{user?.name || 'User'}</span>
         </div>
+        
+        {showMenu && (
+          <div className="user-menu">
+            <div className="menu-item">
+              <span>👤</span> Profile
+            </div>
+            <div className="menu-item">
+              <span>⚙️</span> Settings
+            </div>
+            <div className="menu-divider"></div>
+            <div className="menu-item" onClick={onLogout}>
+              <span>🚪</span> Logout
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

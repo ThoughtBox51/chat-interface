@@ -95,3 +95,37 @@
   background: #40414f;
   cursor: not-allowed;
 }
+
+.chat-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #444654;
+  background: #343541;
+  display: flex;
+  justify-content: center;
+}
+
+.model-selector {
+  padding: 8px 16px;
+  background: #40414f;
+  border: 1px solid #565869;
+  border-radius: 6px;
+  color: #ececf1;
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+  min-width: 200px;
+  transition: border-color 0.2s;
+}
+
+.model-selector:hover {
+  border-color: #8e8ea0;
+}
+
+.model-selector:focus {
+  border-color: #10a37f;
+}
+
+.model-selector option {
+  background: #40414f;
+  color: #ececf1;
+}
