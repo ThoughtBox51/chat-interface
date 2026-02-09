@@ -17,11 +17,15 @@ function Login({ onLogin }) {
         return
       }
       if (email && password && name) {
-        onLogin({ email, name })
+        // For demo: make first user admin
+        const role = email === 'admin@example.com' ? 'admin' : 'user'
+        onLogin({ email, name, role })
       }
     } else {
       if (email && password) {
-        onLogin({ email, name: email.split('@')[0] })
+        // For demo: admin@example.com is admin
+        const role = email === 'admin@example.com' ? 'admin' : 'user'
+        onLogin({ email, name: email.split('@')[0], role })
       }
     }
   }

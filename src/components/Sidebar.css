@@ -54,9 +54,10 @@
   color: #ececf1;
   font-size: 14px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
   transition: background 0.2s;
+  position: relative;
 }
 
 .chat-item:hover {
@@ -67,6 +68,15 @@
   background: #343541;
 }
 
+.chat-item.pinned {
+  border-left: 3px solid #10a37f;
+}
+
+.pin-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
 .chat-title {
   flex: 1;
   overflow: hidden;
@@ -74,7 +84,13 @@
   white-space: nowrap;
 }
 
-.delete-btn {
+.chat-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.menu-dots-btn {
   background: none;
   border: none;
   color: #8e8ea0;
@@ -83,14 +99,54 @@
   padding: 0 4px;
   opacity: 0;
   transition: opacity 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
 }
 
-.chat-item:hover .delete-btn {
+.chat-item:hover .menu-dots-btn {
   opacity: 1;
 }
 
-.delete-btn:hover {
+.menu-dots-btn:hover {
+  background: #40414f;
   color: #ececf1;
+}
+
+.chat-dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  background: #2a2b32;
+  border: 1px solid #444654;
+  border-radius: 8px;
+  margin-top: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  z-index: 100;
+  min-width: 160px;
+}
+
+.rename-input {
+  flex: 1;
+  background: #40414f;
+  border: 1px solid #10a37f;
+  border-radius: 4px;
+  color: #ececf1;
+  padding: 4px 8px;
+  font-size: 14px;
+  outline: none;
+}
+
+.menu-item.delete {
+  color: #ef4444;
+}
+
+.menu-item.delete:hover {
+  background: #ef444420;
 }
 
 .sidebar-footer {
