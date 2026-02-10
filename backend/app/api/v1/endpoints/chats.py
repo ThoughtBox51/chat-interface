@@ -1,27 +1,35 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from typing import List
-from bson import ObjectId
 from datetime import datetime
+import uuid
 
-from app.core.database import get_database
+from app.core.database import get_dynamodb
+from app.core.config import settings
 from app.models.chat import ChatCreate, ChatUpdate, Chat, MessageCreate
 from app.models.user import User
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, decimal_to_float
 
 router = APIRouter()
 
 @router.get("/", response_model=List[Chat])
 async def get_chats(current_user: User = Depends(get_current_user)):
     """Get all user chats"""
-    db = get_database()
-    chats = await db.chats.find({"user_id": current_user.id}).sort([
-        ("pinned", -1), ("updated_at", -1)
-    ]).to_list(100)
-    
-    for chat in chats:
-        chat["_id"] = str(chat["_id"])
-    
-    return chats
+    db = get_dynamodb()
+    async with db.get_resource() as dynamodb:
+        table = await dynamodb.Table(settings.CHATS_TABLE)
+        
+        # Scan for user's chats
+        response = await table.scan(
+            FilterExpression='user_id = :user_id',
+            ExpressionAttributeValues={':user_id': current_user.id}
+        )
+        
+        chats = [decimal_to_float(item) for item in response.get('Items', [])]
+        
+        # Sort by pinned and updated_at
+        chats.sort(key=lambda x: (not x.get('pinned', False), x.get('updated_at', '')), reverse=True)
+        
+        return chats
 
 @router.post("/", response_model=Chat, status_code=status.HTTP_201_CREATED)
 async def create_chat(
@@ -29,19 +37,21 @@ async def create_chat(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new chat"""
-    db = get_database()
-    
-    chat_dict = chat_data.model_dump()
-    chat_dict["user_id"] = current_user.id
-    chat_dict["created_at"] = datetime.utcnow()
-    chat_dict["updated_at"] = datetime.utcnow()
-    
-    result = await db.chats.insert_one(chat_dict)
-    
-    created_chat = await db.chats.find_one({"_id": result.inserted_id})
-    created_chat["_id"] = str(created_chat["_id"])
-    
-    return Chat(**created_chat)
+    db = get_dynamodb()
+    async with db.get_resource() as dynamodb:
+        table = await dynamodb.Table(settings.CHATS_TABLE)
+        
+        chat_dict = chat_data.model_dump()
+        chat_dict['id'] = str(uuid.uuid4())
+        chat_dict['user_id'] = current_user.id
+        chat_dict['shared'] = False
+        chat_dict['shared_with'] = []
+        chat_dict['created_at'] = datetime.utcnow().isoformat()
+        chat_dict['updated_at'] = datetime.utcnow().isoformat()
+        
+        await table.put_item(Item=chat_dict)
+        
+        return Chat(**chat_dict)
 
 @router.put("/{chat_id}", response_model=Chat)
 async def update_chat(
@@ -50,28 +60,58 @@ async def update_chat(
     current_user: User = Depends(get_current_user)
 ):
     """Update a chat"""
-    db = get_database()
-    
-    update_dict = {k: v for k, v in chat_data.model_dump().items() if v is not None}
-    if update_dict:
-        update_dict["updated_at"] = datetime.utcnow()
+    db = get_dynamodb()
+    async with db.get_resource() as dynamodb:
+        table = await dynamodb.Table(settings.CHATS_TABLE)
         
-        result = await db.chats.update_one(
-            {"_id": ObjectId(chat_id), "user_id": current_user.id},
-            {"$set": update_dict}
-        )
+        # First verify the chat belongs to the user
+        response = await table.get_item(Key={'id': chat_id})
         
-        if result.modified_count == 0:
+        if 'Item' not in response:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Chat not found"
             )
-    
-    updated_chat = await db.chats.find_one({"_id": ObjectId(chat_id)})
-    updated_chat["_id"] = str(updated_chat["_id"])
-    
-    return Chat(**updated_chat)
-
+        
+        chat = decimal_to_float(response['Item'])
+        
+        if chat.get('user_id') != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to update this chat"
+            )
+        
+        update_dict = {k: v for k, v in chat_data.model_dump().items() if v is not None}
+        
+        if not update_dict:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No fields to update"
+            )
+        
+        # Build update expression
+        update_expr = 'SET updated_at = :updated_at'
+        expr_values = {':updated_at': datetime.utcnow().isoformat()}
+        expr_names = {}
+        
+        for key, value in update_dict.items():
+            attr_name = f'#{key}'
+            attr_value = f':{key}'
+            update_expr += f', {attr_name} = {attr_value}'
+            expr_names[attr_name] = key
+            expr_values[attr_value] = value
+        
+        response = await table.update_item(
+            Key={'id': chat_id},
+            UpdateExpression=update_expr,
+            ExpressionAttributeNames=expr_names if expr_names else None,
+            ExpressionAttributeValues=expr_values,
+            ReturnValues='ALL_NEW'
+        )
+        
+        updated_chat = decimal_to_float(response['Attributes'])
+        
+        return Chat(**updated_chat)
 
 @router.delete("/{chat_id}")
 async def delete_chat(
@@ -79,20 +119,30 @@ async def delete_chat(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a chat"""
-    db = get_database()
-    
-    result = await db.chats.delete_one({
-        "_id": ObjectId(chat_id),
-        "user_id": current_user.id
-    })
-    
-    if result.deleted_count == 0:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat not found"
-        )
-    
-    return {"message": "Chat deleted successfully"}
+    db = get_dynamodb()
+    async with db.get_resource() as dynamodb:
+        table = await dynamodb.Table(settings.CHATS_TABLE)
+        
+        # First verify the chat belongs to the user
+        response = await table.get_item(Key={'id': chat_id})
+        
+        if 'Item' not in response:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat not found"
+            )
+        
+        chat = decimal_to_float(response['Item'])
+        
+        if chat.get('user_id') != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to delete this chat"
+            )
+        
+        await table.delete_item(Key={'id': chat_id})
+        
+        return {"message": "Chat deleted successfully"}
 
 @router.post("/{chat_id}/messages", response_model=Chat)
 async def send_message(
@@ -101,31 +151,45 @@ async def send_message(
     current_user: User = Depends(get_current_user)
 ):
     """Send a message in a chat"""
-    db = get_database()
-    
-    chat = await db.chats.find_one({
-        "_id": ObjectId(chat_id),
-        "user_id": current_user.id
-    })
-    
-    if not chat:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat not found"
+    db = get_dynamodb()
+    async with db.get_resource() as dynamodb:
+        table = await dynamodb.Table(settings.CHATS_TABLE)
+        
+        # First verify the chat belongs to the user
+        response = await table.get_item(Key={'id': chat_id})
+        
+        if 'Item' not in response:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat not found"
+            )
+        
+        chat = decimal_to_float(response['Item'])
+        
+        if chat.get('user_id') != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to send messages in this chat"
+            )
+        
+        message_dict = message.model_dump()
+        message_dict['timestamp'] = datetime.utcnow().isoformat()
+        
+        # Get current messages and append new one
+        messages = chat.get('messages', [])
+        messages.append(message_dict)
+        
+        # Update chat with new message
+        response = await table.update_item(
+            Key={'id': chat_id},
+            UpdateExpression='SET messages = :messages, updated_at = :updated_at',
+            ExpressionAttributeValues={
+                ':messages': messages,
+                ':updated_at': datetime.utcnow().isoformat()
+            },
+            ReturnValues='ALL_NEW'
         )
-    
-    message_dict = message.model_dump()
-    message_dict["timestamp"] = datetime.utcnow()
-    
-    await db.chats.update_one(
-        {"_id": ObjectId(chat_id)},
-        {
-            "$push": {"messages": message_dict},
-            "$set": {"updated_at": datetime.utcnow()}
-        }
-    )
-    
-    updated_chat = await db.chats.find_one({"_id": ObjectId(chat_id)})
-    updated_chat["_id"] = str(updated_chat["_id"])
-    
-    return Chat(**updated_chat)
+        
+        updated_chat = decimal_to_float(response['Attributes'])
+        
+        return Chat(**updated_chat)

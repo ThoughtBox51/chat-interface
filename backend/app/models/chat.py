@@ -1,7 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
-from bson import ObjectId
 
 class Message(BaseModel):
     role: str
@@ -21,7 +20,7 @@ class ChatUpdate(BaseModel):
     pinned: Optional[bool] = None
 
 class ChatInDB(ChatBase):
-    id: str = Field(alias="_id")
+    id: str
     user_id: str
     messages: List[Message] = []
     shared: bool = False
@@ -31,7 +30,6 @@ class ChatInDB(ChatBase):
 
     class Config:
         populate_by_name = True
-        json_encoders = {ObjectId: str}
 
 class Chat(ChatInDB):
     pass

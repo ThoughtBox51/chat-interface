@@ -1,12 +1,13 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
-from bson import ObjectId
 from datetime import datetime
+import uuid
 
-from app.core.database import get_database
+from app.core.database import get_dynamodb
+from app.core.config import settings
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.models.user import UserCreate, User
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, decimal_to_float
 
 router = APIRouter()
 
@@ -21,69 +22,94 @@ class LoginRequest(BaseModel):
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate):
     """Register a new user (requires admin approval)"""
-    db = get_database()
+    db = get_dynamodb()
     
-    # Check if user exists
-    existing_user = await db.users.find_one({"email": user_data.email})
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+    async with db.get_resource() as dynamodb:
+        table = await dynamodb.Table(settings.USERS_TABLE)
+        
+        # Check if user exists
+        response = await table.query(
+            IndexName='email-index',
+            KeyConditionExpression='email = :email',
+            ExpressionAttributeValues={':email': user_data.email}
         )
-    
-    # Create user
-    user_dict = user_data.model_dump()
-    user_dict["hashed_password"] = get_password_hash(user_dict.pop("password"))
-    user_dict["status"] = "pending"
-    user_dict["created_at"] = datetime.utcnow()
-    user_dict["updated_at"] = datetime.utcnow()
-    
-    result = await db.users.insert_one(user_dict)
-    
-    return {
-        "message": "Registration successful. Awaiting admin approval.",
-        "user_id": str(result.inserted_id)
-    }
+        
+        if response['Items']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        # Create user
+        user_id = str(uuid.uuid4())
+        user_dict = {
+            'id': user_id,
+            'email': user_data.email,
+            'name': user_data.name,
+            'hashed_password': get_password_hash(user_data.password),
+            'bio': user_data.bio,
+            'role': user_data.role,
+            'status': 'pending',
+            'created_at': datetime.utcnow().isoformat(),
+            'updated_at': datetime.utcnow().isoformat()
+        }
+        
+        await table.put_item(Item=user_dict)
+        
+        return {
+            "message": "Registration successful. Awaiting admin approval.",
+            "user_id": user_id
+        }
 
 @router.post("/login", response_model=dict)
 async def login(login_data: LoginRequest):
     """Login and get access token"""
-    db = get_database()
+    db = get_dynamodb()
     
-    user = await db.users.find_one({"email": login_data.email})
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials"
+    async with db.get_resource() as dynamodb:
+        table = await dynamodb.Table(settings.USERS_TABLE)
+        
+        # Find user by email
+        response = await table.query(
+            IndexName='email-index',
+            KeyConditionExpression='email = :email',
+            ExpressionAttributeValues={':email': login_data.email}
         )
-    
-    if user["status"] == "pending":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account pending approval"
-        )
-    
-    if user["status"] == "suspended":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account suspended"
-        )
-    
-    if not verify_password(login_data.password, user["hashed_password"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials"
-        )
-    
-    access_token = create_access_token(data={"sub": str(user["_id"])})
-    
-    user["_id"] = str(user["_id"])
-    user.pop("hashed_password")
-    
-    return {
-        "token": access_token,
-        "user": user
-    }
+        
+        if not response['Items']:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials"
+            )
+        
+        user = decimal_to_float(response['Items'][0])
+        
+        if user["status"] == "pending":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account pending approval"
+            )
+        
+        if user["status"] == "suspended":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account suspended"
+            )
+        
+        if not verify_password(login_data.password, user["hashed_password"]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials"
+            )
+        
+        access_token = create_access_token(data={"sub": user["id"]})
+        
+        user.pop("hashed_password")
+        
+        return {
+            "token": access_token,
+            "user": user
+        }
 
 @router.get("/me", response_model=User)
 async def get_me(current_user: User = Depends(get_current_user)):
@@ -97,23 +123,33 @@ async def update_profile(
     current_user: User = Depends(get_current_user)
 ):
     """Update user profile"""
-    db = get_database()
+    db = get_dynamodb()
     
-    update_data = {}
-    if name:
-        update_data["name"] = name
-    if bio is not None:
-        update_data["bio"] = bio
-    
-    if update_data:
-        update_data["updated_at"] = datetime.utcnow()
-        await db.users.update_one(
-            {"_id": ObjectId(current_user.id)},
-            {"$set": update_data}
+    async with db.get_resource() as dynamodb:
+        table = await dynamodb.Table(settings.USERS_TABLE)
+        
+        update_expr = "SET updated_at = :updated_at"
+        expr_values = {':updated_at': datetime.utcnow().isoformat()}
+        
+        if name:
+            update_expr += ", #n = :name"
+            expr_values[':name'] = name
+        if bio is not None:
+            update_expr += ", bio = :bio"
+            expr_values[':bio'] = bio
+        
+        expr_names = {'#n': 'name'} if name else None
+        
+        await table.update_item(
+            Key={'id': current_user.id},
+            UpdateExpression=update_expr,
+            ExpressionAttributeValues=expr_values,
+            ExpressionAttributeNames=expr_names
         )
-    
-    updated_user = await db.users.find_one({"_id": ObjectId(current_user.id)})
-    updated_user["_id"] = str(updated_user["_id"])
-    updated_user.pop("hashed_password", None)
-    
-    return User(**updated_user)
+        
+        # Get updated user
+        response = await table.get_item(Key={'id': current_user.id})
+        updated_user = decimal_to_float(response['Item'])
+        updated_user.pop('hashed_password', None)
+        
+        return User(**updated_user)

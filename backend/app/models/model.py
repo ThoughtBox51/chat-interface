@@ -1,7 +1,6 @@
 from typing import Optional, List, Dict
 from datetime import datetime
 from pydantic import BaseModel, Field
-from bson import ObjectId
 
 class Header(BaseModel):
     key: str
@@ -34,7 +33,7 @@ class ModelUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 class ModelInDB(ModelBase):
-    id: str = Field(alias="_id")
+    id: str
     api_key: Optional[str] = None
     headers: List[Header] = []
     created_by: str
@@ -43,10 +42,9 @@ class ModelInDB(ModelBase):
 
     class Config:
         populate_by_name = True
-        json_encoders = {ObjectId: str}
 
 class Model(BaseModel):
-    id: str = Field(alias="_id")
+    id: str
     name: str
     provider: Optional[str] = None
     integration_type: str
@@ -60,4 +58,3 @@ class Model(BaseModel):
 
     class Config:
         populate_by_name = True
-        json_encoders = {ObjectId: str}

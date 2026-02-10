@@ -1,7 +1,6 @@
 from typing import Dict, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
-from bson import ObjectId
 
 class ModelPermission(BaseModel):
     view: bool = False
@@ -42,14 +41,13 @@ class RoleUpdate(BaseModel):
     permissions: Optional[Permissions] = None
 
 class RoleInDB(RoleBase):
-    id: str = Field(alias="_id")
+    id: str
     created_by: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
         populate_by_name = True
-        json_encoders = {ObjectId: str}
 
 class Role(RoleInDB):
     pass

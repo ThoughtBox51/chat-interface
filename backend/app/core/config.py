@@ -7,9 +7,18 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
     
-    # MongoDB
-    MONGODB_URL: str = "mongodb://localhost:27017"
-    MONGODB_DB_NAME: str = "chat_app"
+    # AWS DynamoDB
+    AWS_REGION: str = "us-east-1"
+    AWS_PROFILE: str = ""  # AWS profile name (optional)
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    DYNAMODB_ENDPOINT_URL: str = ""  # Leave empty for AWS, or use local endpoint
+    
+    # Table names
+    USERS_TABLE: str = "chat_app_users"
+    MODELS_TABLE: str = "chat_app_models"
+    ROLES_TABLE: str = "chat_app_roles"
+    CHATS_TABLE: str = "chat_app_chats"
     
     # JWT
     SECRET_KEY: str = "your-secret-key-change-this-in-production"
