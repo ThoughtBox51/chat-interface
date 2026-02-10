@@ -28,6 +28,20 @@ function App() {
     { id: 1, name: 'Admin User', email: 'admin@example.com', role: 'admin' },
     { id: 2, name: 'Regular User', email: 'user@example.com', role: 'user' }
   ])
+  
+  // Roles data
+  const [roles, setRoles] = useState([
+    {
+      id: 1,
+      name: 'Content Creator',
+      description: 'Can create and manage content using approved models',
+      permissions: {
+        models: { 1: { view: true, use: true, configure: false } },
+        features: { chat: true, history: true, export: true, share: false, settings: true, profile: true },
+        admin: { manageUsers: false, manageModels: false, manageRoles: false, viewAnalytics: false, systemSettings: false }
+      }
+    }
+  ])
 
   const handleLogin = (userData) => {
     setUser({ ...userData, role: userData.role || 'user' })
@@ -46,6 +60,10 @@ function App() {
   // Admin functions
   const addModel = (model) => {
     setModels([...models, { ...model, id: Date.now() }])
+  }
+
+  const editModel = (updatedModel) => {
+    setModels(models.map(m => m.id === updatedModel.id ? updatedModel : m))
   }
 
   const deleteModel = (id) => {
@@ -68,8 +86,41 @@ function App() {
     setAllUsers(allUsers.map(u => u.id === id ? { ...u, role } : u))
   }
 
+  const addRole = (role) => {
+    setRoles([...roles, role])
+  }
+
+  const editRole = (updatedRole) => {
+    setRoles(roles.map(r => r.id === updatedRole.id ? updatedRole : r))
+  }
+
+  const deleteRole = (id) => {
+    setRoles(roles.filter(r => r.id !== id))
+  }
+
   if (!user) {
     return <Login onLogin={handleLogin} />
+  }
+
+  if (showAdmin && user?.role === 'admin') {
+    return (
+      <AdminPanel 
+        onClose={() => setShowAdmin(false)}
+        models={models}
+        onAddModel={addModel}
+        onEditModel={editModel}
+        onDeleteModel={deleteModel}
+        pendingUsers={pendingUsers}
+        onApproveUser={approveUser}
+        onRejectUser={rejectUser}
+        users={allUsers}
+        onUpdateUserRole={updateUserRole}
+        roles={roles}
+        onAddRole={addRole}
+        onEditRole={editRole}
+        onDeleteRole={deleteRole}
+      />
+    )
   }
 
   const createNewChat = () => {
@@ -161,19 +212,6 @@ function App() {
           user={user}
           onUpdateProfile={handleUpdateProfile}
           onClose={() => setShowProfile(false)}
-        />
-      )}
-      {showAdmin && user?.role === 'admin' && (
-        <AdminPanel 
-          onClose={() => setShowAdmin(false)}
-          models={models}
-          onAddModel={addModel}
-          onDeleteModel={deleteModel}
-          pendingUsers={pendingUsers}
-          onApproveUser={approveUser}
-          onRejectUser={rejectUser}
-          users={allUsers}
-          onUpdateUserRole={updateUserRole}
         />
       )}
     </div>
