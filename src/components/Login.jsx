@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { authService } from '../services/auth.service'
 import './Login.css'
 
 function Login({ onLogin }) {
@@ -7,26 +8,33 @@ function Login({ onLogin }) {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    setError('')
+    setLoading(true)
     
-    if (isSignUp) {
-      if (password !== confirmPassword) {
-        alert('Passwords do not match')
-        return
+    try {
+      if (isSignUp) {
+        if (password !== confirmPassword) {
+          setError('Passwords do not match')
+          setLoading(false)
+          return
+        }
+        
+        const response = await authService.register({ name, email, password })
+        alert(response.message || 'Registration successful! Awaiting admin approval.')
+        setIsSignUp(false)
+      } else {
+        const response = await authService.login({ email, password })
+        onLogin(response.user)
       }
-      if (email && password && name) {
-        // For demo: make first user admin
-        const role = email === 'admin@example.com' ? 'admin' : 'user'
-        onLogin({ email, name, role })
-      }
-    } else {
-      if (email && password) {
-        // For demo: admin@example.com is admin
-        const role = email === 'admin@example.com' ? 'admin' : 'user'
-        onLogin({ email, name: email.split('@')[0], role })
-      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'An error occurred')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -90,8 +98,10 @@ function Login({ onLogin }) {
             </div>
           )}
           
-          <button type="submit" className="login-btn">
-            {isSignUp ? 'Sign Up' : 'Sign In'}
+          {error && <p className="error-message">{error}</p>}
+          
+          <button type="submit" className="login-btn" disabled={loading}>
+            {loading ? 'Please wait...' : isSignUp ? 'Sign Up' : 'Sign In'}
           </button>
         </form>
         

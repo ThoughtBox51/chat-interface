@@ -3,3 +3,13 @@
   height: 100vh;
   background: #343541;
 }
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: #343541;
+  color: #ececf1;
+  font-size: 18px;
+}
