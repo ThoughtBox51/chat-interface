@@ -1,6 +1,7 @@
-from typing import List
+from typing import List, Union
 from pydantic_settings import BaseSettings
-from pydantic import AnyHttpUrl
+from pydantic import field_validator
+import json
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "LLM Chat API"
@@ -26,10 +27,21 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     
     # CORS
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = ["http://localhost:5173"]
+    BACKEND_CORS_ORIGINS: Union[List[str], str] = '["http://localhost:5173"]'
+    
+    @field_validator('BACKEND_CORS_ORIGINS', mode='before')
+    @classmethod
+    def parse_cors_origins(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return [v]
+        return v
     
     class Config:
-        env_file = ".env"
+        env_file = "backend/.env"  # Look for .env in backend directory
         case_sensitive = True
+        extra = "ignore"  # Ignore extra fields from .env
 
 settings = Settings()

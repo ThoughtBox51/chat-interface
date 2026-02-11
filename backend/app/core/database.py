@@ -36,7 +36,17 @@ class DynamoDB:
 db = DynamoDB()
 
 async def init_dynamodb():
-    """Initialize DynamoDB tables"""
+    """Initialize DynamoDB - tables should already exist in AWS"""
+    # Skip table creation if not using local DynamoDB
+    if not settings.DYNAMODB_ENDPOINT_URL:
+        print("Using AWS DynamoDB - tables should already exist")
+        print(f"Region: {settings.AWS_REGION}")
+        if settings.AWS_PROFILE:
+            print(f"Profile: {settings.AWS_PROFILE}")
+        return
+    
+    # Only create tables for local DynamoDB
+    print("Initializing local DynamoDB tables...")
     async with db.get_resource() as dynamodb:
         try:
             # Create Users table

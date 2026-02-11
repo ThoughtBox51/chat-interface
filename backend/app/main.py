@@ -9,6 +9,8 @@ from app.api.v1.api import api_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    print(f"AWS Profile: '{settings.AWS_PROFILE}'")
+    print(f"AWS Region: {settings.AWS_REGION}")
     await init_dynamodb()
     yield
     # Shutdown

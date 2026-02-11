@@ -44,7 +44,7 @@ function App() {
       setChats(chatsData)
       setModels(modelsData)
       if (chatsData.length > 0) {
-        setActiveChat(chatsData[0]._id)
+        setActiveChat(chatsData[0].id || chatsData[0]._id)
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -102,8 +102,9 @@ function App() {
 
   const editModel = async (updatedModel) => {
     try {
-      const updated = await modelService.updateModel(updatedModel._id, updatedModel)
-      setModels(models.map(m => m._id === updated._id ? updated : m))
+      const modelId = updatedModel.id || updatedModel._id
+      const updated = await modelService.updateModel(modelId, updatedModel)
+      setModels(models.map(m => (m.id || m._id) === (updated.id || updated._id) ? updated : m))
     } catch (error) {
       console.error('Error updating model:', error)
     }
@@ -112,7 +113,7 @@ function App() {
   const deleteModel = async (id) => {
     try {
       await modelService.deleteModel(id)
-      setModels(models.filter(m => m._id !== id))
+      setModels(models.filter(m => (m.id || m._id) !== id))
     } catch (error) {
       console.error('Error deleting model:', error)
     }
@@ -209,7 +210,7 @@ function App() {
     try {
       const newChat = await chatService.createChat({ title: 'New Chat', messages: [] })
       setChats([newChat, ...chats])
-      setActiveChat(newChat._id)
+      setActiveChat(newChat.id || newChat._id)
     } catch (error) {
       console.error('Error creating chat:', error)
     }
@@ -218,10 +219,10 @@ function App() {
   const deleteChat = async (id) => {
     try {
       await chatService.deleteChat(id)
-      const filtered = chats.filter(chat => chat._id !== id)
+      const filtered = chats.filter(chat => (chat.id || chat._id) !== id)
       setChats(filtered)
       if (activeChat === id && filtered.length > 0) {
-        setActiveChat(filtered[0]._id)
+        setActiveChat(filtered[0].id || filtered[0]._id)
       }
     } catch (error) {
       console.error('Error deleting chat:', error)
@@ -232,7 +233,7 @@ function App() {
     try {
       await chatService.updateChat(id, { title: newTitle })
       setChats(chats.map(chat => 
-        chat._id === id ? { ...chat, title: newTitle } : chat
+        (chat.id || chat._id) === id ? { ...chat, title: newTitle } : chat
       ))
     } catch (error) {
       console.error('Error renaming chat:', error)
@@ -241,10 +242,10 @@ function App() {
 
   const pinChat = async (id) => {
     try {
-      const chat = chats.find(c => c._id === id)
+      const chat = chats.find(c => (c.id || c._id) === id)
       await chatService.updateChat(id, { pinned: !chat.pinned })
       setChats(chats.map(chat => 
-        chat._id === id ? { ...chat, pinned: !chat.pinned } : chat
+        (chat.id || chat._id) === id ? { ...chat, pinned: !chat.pinned } : chat
       ).sort((a, b) => {
         if (a.pinned && !b.pinned) return -1
         if (!a.pinned && b.pinned) return 1
@@ -257,12 +258,43 @@ function App() {
 
   const sendMessage = async (content) => {
     try {
+      // If no active chat, create one first
+      if (!activeChat) {
+        const newChat = await chatService.createChat({ title: 'New Chat', messages: [] })
+        setChats([newChat, ...chats])
+        setActiveChat(newChat.id)
+        
+        // Send message to the new chat
+        await chatService.sendMessage(newChat.id, { role: 'user', content })
+        
+        // Update the new chat with the message
+        const updatedChat = {
+          ...newChat,
+          title: content.slice(0, 30) + (content.length > 30 ? '...' : ''),
+          messages: [{ role: 'user', content, timestamp: new Date().toISOString() }]
+        }
+        setChats([updatedChat, ...chats])
+        
+        // Simulate AI response
+        setTimeout(async () => {
+          await chatService.sendMessage(newChat.id, { 
+            role: 'assistant', 
+            content: 'This is a simulated response. Connect to your LLM API here.' 
+          })
+          const updatedChats = await chatService.getChats()
+          setChats(updatedChats)
+        }, 500)
+        
+        return
+      }
+      
+      // Send message to existing chat
       await chatService.sendMessage(activeChat, { role: 'user', content })
       
       // Update local state
       setChats(chats.map(chat => {
-        if (chat._id === activeChat) {
-          const newMessages = [...chat.messages, { role: 'user', content }]
+        if (chat.id === activeChat || chat._id === activeChat) {
+          const newMessages = [...chat.messages, { role: 'user', content, timestamp: new Date().toISOString() }]
           const title = chat.messages.length === 0 
             ? content.slice(0, 30) + (content.length > 30 ? '...' : '')
             : chat.title
@@ -283,10 +315,11 @@ function App() {
       }))
     } catch (error) {
       console.error('Error sending message:', error)
+      alert('Failed to send message. Please try again.')
     }
   }
 
-  const currentChat = chats.find(chat => chat._id === activeChat)
+  const currentChat = chats.find(chat => chat.id === activeChat || chat._id === activeChat)
 
   return (
     <div className="app">
