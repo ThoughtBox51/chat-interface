@@ -4,6 +4,7 @@ import ChatWindow from './components/ChatWindow'
 import Login from './components/Login'
 import Profile from './components/Profile'
 import AdminPanel from './components/AdminPanel'
+import { SidebarSkeleton, ChatWindowSkeleton } from './components/LoadingSkeleton'
 import { authService } from './services/auth.service'
 import { chatService } from './services/chat.service'
 import { modelService } from './services/model.service'
@@ -18,6 +19,8 @@ function App() {
   const [chats, setChats] = useState([])
   const [activeChat, setActiveChat] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [chatsLoading, setChatsLoading] = useState(false)
+  const [sending, setSending] = useState(false)
   
   // Admin data
   const [models, setModels] = useState([])
@@ -36,6 +39,7 @@ function App() {
   }, [])
 
   const loadUserData = async () => {
+    setChatsLoading(true)
     try {
       const [chatsData, modelsData] = await Promise.all([
         chatService.getChats(),
@@ -50,6 +54,7 @@ function App() {
       console.error('Error loading data:', error)
     } finally {
       setLoading(false)
+      setChatsLoading(false)
     }
   }
 
@@ -146,9 +151,19 @@ function App() {
   const updateUserRole = async (id, role) => {
     try {
       await userService.updateUserRole(id, role)
-      setAllUsers(allUsers.map(u => u._id === id ? { ...u, role } : u))
+      setAllUsers(allUsers.map(u => (u.id || u._id) === id ? { ...u, role } : u))
     } catch (error) {
       console.error('Error updating user role:', error)
+    }
+  }
+
+  const deleteUser = async (id) => {
+    try {
+      await userService.deleteUser(id)
+      setAllUsers(allUsers.filter(u => (u.id || u._id) !== id))
+    } catch (error) {
+      console.error('Error deleting user:', error)
+      alert(`Failed to delete user: ${error.response?.data?.detail || error.message}`)
     }
   }
 
@@ -180,7 +195,12 @@ function App() {
   }
 
   if (loading) {
-    return <div className="loading">Loading...</div>
+    return (
+      <div className="app">
+        <SidebarSkeleton />
+        <ChatWindowSkeleton />
+      </div>
+    )
   }
 
   if (!user) {
@@ -204,6 +224,7 @@ function App() {
         onRejectUser={rejectUser}
         users={allUsers}
         onUpdateUserRole={updateUserRole}
+        onDeleteUser={deleteUser}
         roles={roles}
         onAddRole={addRole}
         onEditRole={editRole}
@@ -314,6 +335,7 @@ function App() {
   }
 
   const sendMessage = async (content, modelId) => {
+    setSending(true)
     try {
       let chatId = activeChat
       let isNewChat = false
@@ -422,6 +444,8 @@ function App() {
     } catch (error) {
       console.error('Error sending message:', error)
       alert(`Failed to send message: ${error.message}`)
+    } finally {
+      setSending(false)
     }
   }
   
@@ -482,11 +506,13 @@ function App() {
         onLogout={handleLogout}
         onOpenProfile={() => setShowProfile(true)}
         onOpenAdmin={() => setShowAdmin(true)}
+        loading={chatsLoading}
       />
       <ChatWindow 
         chat={currentChat}
         onSendMessage={sendMessage}
         models={models}
+        sending={sending}
       />
       {showProfile && (
         <Profile 

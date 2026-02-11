@@ -89,13 +89,21 @@ async def approve_user(
 @router.put("/{user_id}/role/")
 async def update_user_role(
     user_id: str,
-    role: str,
-    custom_role_id: str = None,
+    role_data: dict,
     current_admin: User = Depends(get_current_admin)
 ):
     """Update user role"""
     db = get_dynamodb()
     table = db.get_table(settings.USERS_TABLE)
+    
+    role = role_data.get('role')
+    custom_role_id = role_data.get('customRoleId')
+    
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role is required"
+        )
     
     update_expr = 'SET #role = :role, updated_at = :updated_at'
     expr_names = {'#role': 'role'}

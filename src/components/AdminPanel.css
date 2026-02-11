@@ -190,6 +190,13 @@
   margin-bottom: 8px;
 }
 
+.model-info .connection-name {
+  color: #8e8ea0;
+  font-size: 12px;
+  font-style: italic;
+  margin: 2px 0;
+}
+
 .model-info p {
   color: #8e8ea0;
   font-size: 14px;
@@ -321,6 +328,12 @@
   font-size: 14px;
 }
 
+.user-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .role-select {
   padding: 8px 16px;
   background: #40414f;
@@ -338,6 +351,22 @@
 
 .role-select:focus {
   border-color: #10a37f;
+}
+
+.delete-user-btn {
+  padding: 8px 16px;
+  background: #ef4444;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.delete-user-btn:hover {
+  background: #dc2626;
 }
 
 .integration-badge {
@@ -471,5 +500,21 @@
   color: #ececf1;
   font-size: 12px;
   border-radius: 12px;
+  font-weight: 600;
+}
+
+.default-role {
+  border: 2px solid #10a37f;
+  background: #2a2b32;
+}
+
+.default-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #10a37f;
+  color: white;
+  font-size: 11px;
+  border-radius: 10px;
+  margin-left: 8px;
   font-weight: 600;
 }

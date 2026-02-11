@@ -10,6 +10,7 @@ function AddModelModal({ onClose, onAdd, editModel }) {
   )
   const [modelData, setModelData] = useState(editModel ? {
     name: editModel.name || '',
+    displayName: editModel.display_name || '',
     provider: editModel.provider || '',
     apiKey: editModel.api_key || '',
     endpoint: editModel.endpoint || '',
@@ -26,6 +27,7 @@ function AddModelModal({ onClose, onAdd, editModel }) {
     modalities: editModel.modalities || []
   } : {
     name: '',
+    displayName: '',
     provider: '',
     apiKey: '',
     endpoint: '',
@@ -77,6 +79,7 @@ function AddModelModal({ onClose, onAdd, editModel }) {
       
       const backendData = {
         name: modelData.name,
+        display_name: modelData.displayName || null,
         provider: modelData.provider || null,
         integration_type: integrationType,
         endpoint: modelData.endpoint || null,
@@ -290,6 +293,17 @@ function AddModelModal({ onClose, onAdd, editModel }) {
             </div>
 
             <div className="form-field">
+              <label>Display Name (Optional)</label>
+              <input
+                type="text"
+                placeholder="e.g., GPT-4 Turbo"
+                value={modelData.displayName}
+                onChange={(e) => setModelData({ ...modelData, displayName: e.target.value })}
+              />
+              <p className="field-description">Friendly name shown in the chat dropdown</p>
+            </div>
+
+            <div className="form-field">
               <label>API Key</label>
               <input
                 type="password"
@@ -310,6 +324,17 @@ function AddModelModal({ onClose, onAdd, editModel }) {
                 value={modelData.name}
                 onChange={(e) => setModelData({ ...modelData, name: e.target.value })}
               />
+            </div>
+
+            <div className="form-field">
+              <label>Display Name (Optional)</label>
+              <input
+                type="text"
+                placeholder="e.g., My Custom Model"
+                value={modelData.displayName}
+                onChange={(e) => setModelData({ ...modelData, displayName: e.target.value })}
+              />
+              <p className="field-description">Friendly name shown in the chat dropdown</p>
             </div>
 
             <div className="form-field">

@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import './ChatWindow.css'
 
-function ChatWindow({ chat, onSendMessage, models = [] }) {
+function ChatWindow({ chat, onSendMessage, models = [], sending }) {
   const [input, setInput] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
-  const [sending, setSending] = useState(false)
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -89,10 +88,9 @@ function ChatWindow({ chat, onSendMessage, models = [] }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (input.trim() && !sending && selectedModel) {
-      setSending(true)
+      const message = input
       setInput('')
-      await onSendMessage(input, selectedModel)
-      setSending(false)
+      await onSendMessage(message, selectedModel)
     }
   }
 
@@ -110,7 +108,7 @@ function ChatWindow({ chat, onSendMessage, models = [] }) {
           ) : (
             models.map(model => (
               <option key={model.id || model._id} value={model.id || model._id}>
-                {model.name}
+                {model.display_name || model.name}
               </option>
             ))
           )}
@@ -124,14 +122,25 @@ function ChatWindow({ chat, onSendMessage, models = [] }) {
             <p>Start a conversation</p>
           </div>
         ) : (
-          chat?.messages.map((msg, idx) => (
-            <div key={idx} className={`message ${msg.role}`}>
-              <div 
-                className="message-content"
-                dangerouslySetInnerHTML={{ __html: formatMessage(msg.content) }}
-              />
-            </div>
-          ))
+          <>
+            {chat?.messages.map((msg, idx) => (
+              <div key={idx} className={`message ${msg.role}`}>
+                <div 
+                  className="message-content"
+                  dangerouslySetInnerHTML={{ __html: formatMessage(msg.content) }}
+                />
+              </div>
+            ))}
+            {sending && (
+              <div className="message assistant typing">
+                <div className="typing-indicator">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+            )}
+          </>
         )}
         <div ref={messagesEndRef} />
       </div>

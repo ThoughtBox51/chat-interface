@@ -228,3 +228,29 @@
   background: #444654;
   margin: 4px 0;
 }
+
+.empty-chat-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: #8e8ea0;
+}
+
+.empty-chat-list p {
+  margin: 4px 0;
+  font-size: 14px;
+}
+
+.empty-subtitle {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.skeleton-chat-item {
+  height: 44px;
+  margin: 4px 0;
+  border-radius: 6px;
+}

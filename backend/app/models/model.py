@@ -9,6 +9,7 @@ class Header(BaseModel):
 
 class ModelBase(BaseModel):
     name: str
+    display_name: Optional[str] = None
     provider: Optional[str] = None
     integration_type: str
     endpoint: Optional[str] = None
@@ -30,6 +31,7 @@ class ModelCreate(ModelBase):
 
 class ModelUpdate(BaseModel):
     name: Optional[str] = None
+    display_name: Optional[str] = None
     provider: Optional[str] = None
     endpoint: Optional[str] = None
     api_key: Optional[str] = None
@@ -60,6 +62,7 @@ class ModelInDB(ModelBase):
 class Model(BaseModel):
     id: str
     name: str
+    display_name: Optional[str] = None
     provider: Optional[str] = None
     integration_type: str
     endpoint: Optional[str] = None

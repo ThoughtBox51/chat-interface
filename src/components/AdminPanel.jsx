@@ -4,7 +4,7 @@ import RoleModal from './RoleModal'
 import { modelService } from '../services/model.service'
 import './AdminPanel.css'
 
-function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, pendingUsers, onApproveUser, onRejectUser, users, onUpdateUserRole, roles, onAddRole, onEditRole, onDeleteRole }) {
+function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, pendingUsers, onApproveUser, onRejectUser, users, onUpdateUserRole, onDeleteUser, roles, onAddRole, onEditRole, onDeleteRole }) {
   const [activeTab, setActiveTab] = useState('models')
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingModel, setEditingModel] = useState(null)
@@ -151,7 +151,8 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
               {models.map(model => (
                 <div key={model.id} className="model-card">
                   <div className="model-info">
-                    <h4>{model.name}</h4>
+                    <h4>{model.display_name || model.name}</h4>
+                    {model.display_name && <p className="connection-name">Connection: {model.name}</p>}
                     <p>Provider: {model.provider || 'Custom'}</p>
                     {model.apiKey && <p className="api-key">API Key: {model.apiKey?.substring(0, 10)}...</p>}
                     {model.endpoint && <p className="endpoint">Endpoint: {model.endpoint}</p>}
@@ -246,20 +247,30 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
                     <h4>{user.name}</h4>
                     <p>{user.email}</p>
                   </div>
-                  <select 
-                    value={user.role}
-                    onChange={(e) => onUpdateUserRole(user.id, e.target.value)}
-                    className="role-select"
-                  >
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
-                    <option value="moderator">Moderator</option>
-                    {roles.map(role => (
-                      <option key={role.id} value={role.name.toLowerCase()}>
-                        {role.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="user-actions">
+                    <select 
+                      value={user.role}
+                      onChange={(e) => onUpdateUserRole(user.id, e.target.value)}
+                      className="role-select"
+                    >
+                      <option value="admin">Admin</option>
+                      {roles.map(role => (
+                        <option key={role.id} value={role.id}>
+                          {role.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button 
+                      className="delete-user-btn"
+                      onClick={() => {
+                        if (window.confirm(`Are you sure you want to remove ${user.name}? This action cannot be undone.`)) {
+                          onDeleteUser(user.id)
+                        }
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -279,6 +290,19 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
             </div>
 
             <div className="roles-list">
+              {/* Default Admin Role - Always shown, cannot be deleted */}
+              <div className="role-card default-role">
+                <div className="role-info">
+                  <h4>Admin <span className="default-badge">Default</span></h4>
+                  <p>Full system access with all permissions</p>
+                  <div className="role-stats">
+                    <span className="stat-badge">All Models</span>
+                    <span className="stat-badge">All Features</span>
+                    <span className="stat-badge">Full Admin</span>
+                  </div>
+                </div>
+              </div>
+              
               {roles.map(role => (
                 <div key={role.id} className="role-card">
                   <div className="role-info">
@@ -308,7 +332,11 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
                     </button>
                     <button 
                       className="delete-model-btn"
-                      onClick={() => onDeleteRole(role.id)}
+                      onClick={() => {
+                        if (window.confirm(`Are you sure you want to delete the role "${role.name}"? This action cannot be undone.`)) {
+                          onDeleteRole(role.id)
+                        }
+                      }}
                     >
                       Delete
                     </button>
