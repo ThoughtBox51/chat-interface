@@ -8,7 +8,7 @@
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px;
 }
 
 .empty-state {
@@ -30,8 +30,8 @@
 }
 
 .message {
-  padding: 20px;
-  margin-bottom: 12px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
   border-radius: 8px;
 }
 
@@ -50,11 +50,163 @@
 }
 
 .message-content {
+  line-height: 1.5;
+  font-size: 15px;
+  word-wrap: break-word;
+}
+
+.message-content p {
+  margin: 0 0 4px 0;
+}
+
+.message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.message-content strong {
+  font-weight: 600;
+  color: #fff;
+}
+
+.message-content em {
+  font-style: italic;
+  color: #d1d5db;
+}
+
+.message-content code {
+  background: #1e1e1e;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  color: #e5c07b;
+  border: 1px solid #3a3a3a;
+}
+
+.message-content pre {
+  background: #1e1e1e;
+  padding: 12px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+  border: 1px solid #3a3a3a;
+}
+
+.message-content pre code {
+  background: none;
+  padding: 0;
+  border: none;
+  color: #abb2bf;
+  font-size: 13px;
   line-height: 1.6;
 }
 
+.message-content ul, .message-content ol {
+  margin: 4px 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.message-content ul {
+  margin-left: 4px;
+}
+
+.message-content ol {
+  counter-reset: item;
+  margin-left: 4px;
+}
+
+.message-content li {
+  margin: 0;
+  padding-left: 24px;
+  position: relative;
+  line-height: 1.4;
+}
+
+.message-content li.bullet::before {
+  content: "•";
+  position: absolute;
+  left: 8px;
+  color: #10a37f;
+  font-weight: bold;
+}
+
+.message-content li.numbered {
+  counter-increment: item;
+}
+
+.message-content li.numbered::before {
+  content: counter(item) ".";
+  position: absolute;
+  left: 0;
+  color: #10a37f;
+  font-weight: 600;
+  min-width: 20px;
+}
+
+.message-content h1, .message-content h2, .message-content h3 {
+  margin: 12px 0 6px 0;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1.3;
+}
+
+.message-content h1:first-child,
+.message-content h2:first-child,
+.message-content h3:first-child {
+  margin-top: 0;
+}
+
+.message-content h1 {
+  font-size: 20px;
+  border-bottom: 1px solid #444654;
+  padding-bottom: 6px;
+}
+
+.message-content h2 {
+  font-size: 18px;
+}
+
+.message-content h3 {
+  font-size: 16px;
+}
+
+.message-content a {
+  color: #10a37f;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.message-content a:hover {
+  border-bottom-color: #10a37f;
+}
+
+.message-content br {
+  line-height: 0.3;
+}
+
+/* Scrollbar styling for code blocks */
+.message-content pre::-webkit-scrollbar {
+  height: 8px;
+}
+
+.message-content pre::-webkit-scrollbar-track {
+  background: #2d2d2d;
+  border-radius: 4px;
+}
+
+.message-content pre::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+.message-content pre::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
 .input-form {
-  padding: 20px;
+  padding: 16px;
   background: #343541;
   border-top: 1px solid #444654;
   display: flex;
@@ -97,7 +249,7 @@
 }
 
 .chat-header {
-  padding: 16px 20px;
+  padding: 12px 16px;
   border-bottom: 1px solid #444654;
   background: #343541;
   display: flex;

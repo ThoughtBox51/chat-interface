@@ -34,28 +34,45 @@ function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, use
   }
 
   const handleRenameClick = (chat) => {
-    setRenameId(chat.id)
+    const chatId = chat.id || chat._id
+    setRenameId(chatId)
     setRenameValue(chat.title)
     setShowChatMenu(null)
   }
 
   const handleRenameSubmit = (e, chatId) => {
     if (e.key === 'Enter') {
-      onRenameChat(chatId, renameValue)
-      setRenameId(null)
+      if (renameValue.trim()) {
+        setRenameId(null) // Close input immediately
+        onRenameChat(chatId, renameValue) // Update in background
+      }
     } else if (e.key === 'Escape') {
       setRenameId(null)
     }
   }
 
+  const handleRenameBlur = (chatId) => {
+    if (renameValue.trim()) {
+      onRenameChat(chatId, renameValue)
+    }
+    setRenameId(null)
+  }
+
   const handlePinClick = (chatId) => {
-    onPinChat(chatId)
-    setShowChatMenu(null)
+    setShowChatMenu(null) // Close menu immediately
+    onPinChat(chatId) // Update in background
   }
 
   const handleDeleteClick = (chatId) => {
-    onDeleteChat(chatId)
-    setShowChatMenu(null)
+    const chat = chats.find(c => (c.id || c._id) === chatId)
+    const chatTitle = chat?.title || 'this chat'
+    
+    if (window.confirm(`Are you sure you want to delete "${chatTitle}"? This action cannot be undone.`)) {
+      setShowChatMenu(null) // Close menu immediately
+      onDeleteChat(chatId) // Delete in background
+    } else {
+      setShowChatMenu(null) // Close menu if cancelled
+    }
   }
   return (
     <div className="sidebar">
@@ -70,63 +87,66 @@ function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, use
       </button>
       
       <div className="chat-list">
-        {chats.map(chat => (
-          <div 
-            key={chat.id}
-            className={`chat-item ${activeChat === chat.id ? 'active' : ''} ${chat.pinned ? 'pinned' : ''}`}
-            onClick={() => onSelectChat(chat.id)}
-          >
-            {chat.pinned && <span className="pin-icon">📌</span>}
-            {renameId === chat.id ? (
-              <input
-                type="text"
-                className="rename-input"
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onKeyDown={(e) => handleRenameSubmit(e, chat.id)}
-                onBlur={() => setRenameId(null)}
-                autoFocus
-                onClick={(e) => e.stopPropagation()}
-              />
-            ) : (
-              <span className="chat-title">{chat.title}</span>
-            )}
-            <div className="chat-actions">
-              <button 
-                className="menu-dots-btn"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowChatMenu(showChatMenu === chat.id ? null : chat.id)
-                }}
-              >
-                ⋮
-              </button>
-              {showChatMenu === chat.id && (
-                <div className="chat-dropdown-menu" ref={chatMenuRef}>
-                  <div className="menu-item" onClick={(e) => {
-                    e.stopPropagation()
-                    handleRenameClick(chat)
-                  }}>
-                    <span>✏️</span> Rename
-                  </div>
-                  <div className="menu-item" onClick={(e) => {
-                    e.stopPropagation()
-                    handlePinClick(chat.id)
-                  }}>
-                    <span>{chat.pinned ? '📌' : '📍'}</span> {chat.pinned ? 'Unpin' : 'Pin'}
-                  </div>
-                  <div className="menu-divider"></div>
-                  <div className="menu-item delete" onClick={(e) => {
-                    e.stopPropagation()
-                    handleDeleteClick(chat.id)
-                  }}>
-                    <span>🗑️</span> Delete
-                  </div>
-                </div>
+        {chats.map(chat => {
+          const chatId = chat.id || chat._id
+          return (
+            <div 
+              key={chatId}
+              className={`chat-item ${activeChat === chatId ? 'active' : ''} ${chat.pinned ? 'pinned' : ''}`}
+              onClick={() => onSelectChat(chatId)}
+            >
+              {chat.pinned && <span className="pin-icon">📌</span>}
+              {renameId === chatId ? (
+                <input
+                  type="text"
+                  className="rename-input"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => handleRenameSubmit(e, chatId)}
+                  onBlur={() => handleRenameBlur(chatId)}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span className="chat-title">{chat.title}</span>
               )}
+              <div className="chat-actions">
+                <button 
+                  className="menu-dots-btn"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowChatMenu(showChatMenu === chatId ? null : chatId)
+                  }}
+                >
+                  ⋮
+                </button>
+                {showChatMenu === chatId && (
+                  <div className="chat-dropdown-menu" ref={chatMenuRef}>
+                    <div className="menu-item" onClick={(e) => {
+                      e.stopPropagation()
+                      handleRenameClick(chat)
+                    }}>
+                      <span>✏️</span> Rename
+                    </div>
+                    <div className="menu-item" onClick={(e) => {
+                      e.stopPropagation()
+                      handlePinClick(chatId)
+                    }}>
+                      <span>{chat.pinned ? '📌' : '📍'}</span> {chat.pinned ? 'Unpin' : 'Pin'}
+                    </div>
+                    <div className="menu-divider"></div>
+                    <div className="menu-item delete" onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteClick(chatId)
+                    }}>
+                      <span>🗑️</span> Delete
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       <div className="sidebar-footer" ref={menuRef}>

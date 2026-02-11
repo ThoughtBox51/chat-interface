@@ -14,82 +14,79 @@ router = APIRouter()
 async def get_users(current_admin: User = Depends(get_current_admin)):
     """Get all active users"""
     db = get_dynamodb()
-    async with db.get_resource() as dynamodb:
-        table = await dynamodb.Table(settings.USERS_TABLE)
-        
-        # Query using status-index
-        response = await table.query(
-            IndexName='status-index',
-            KeyConditionExpression='#status = :status',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={':status': 'active'}
-        )
-        
-        users = [decimal_to_float(item) for item in response.get('Items', [])]
-        
-        # Remove sensitive data
-        for user in users:
-            user.pop('hashed_password', None)
-        
-        return users
+    table = db.get_table(settings.USERS_TABLE)
+    
+    # Query using status-index
+    response = table.query(
+        IndexName='status-index',
+        KeyConditionExpression='#status = :status',
+        ExpressionAttributeNames={'#status': 'status'},
+        ExpressionAttributeValues={':status': 'active'}
+    )
+    
+    users = [decimal_to_float(item) for item in response.get('Items', [])]
+    
+    # Remove sensitive data
+    for user in users:
+        user.pop('hashed_password', None)
+    
+    return users
 
-@router.get("/pending", response_model=List[User])
+@router.get("/pending/", response_model=List[User])
 async def get_pending_users(current_admin: User = Depends(get_current_admin)):
     """Get all pending users"""
     db = get_dynamodb()
-    async with db.get_resource() as dynamodb:
-        table = await dynamodb.Table(settings.USERS_TABLE)
-        
-        # Query using status-index
-        response = await table.query(
-            IndexName='status-index',
-            KeyConditionExpression='#status = :status',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={':status': 'pending'}
-        )
-        
-        users = [decimal_to_float(item) for item in response.get('Items', [])]
-        
-        # Remove sensitive data
-        for user in users:
-            user.pop('hashed_password', None)
-        
-        return users
+    table = db.get_table(settings.USERS_TABLE)
+    
+    # Query using status-index
+    response = table.query(
+        IndexName='status-index',
+        KeyConditionExpression='#status = :status',
+        ExpressionAttributeNames={'#status': 'status'},
+        ExpressionAttributeValues={':status': 'pending'}
+    )
+    
+    users = [decimal_to_float(item) for item in response.get('Items', [])]
+    
+    # Remove sensitive data
+    for user in users:
+        user.pop('hashed_password', None)
+    
+    return users
 
-@router.put("/{user_id}/approve", response_model=User)
+@router.put("/{user_id}/approve/", response_model=User)
 async def approve_user(
     user_id: str,
     current_admin: User = Depends(get_current_admin)
 ):
     """Approve a pending user"""
     db = get_dynamodb()
-    async with db.get_resource() as dynamodb:
-        table = await dynamodb.Table(settings.USERS_TABLE)
+    table = db.get_table(settings.USERS_TABLE)
+    
+    # Update user status
+    try:
+        response = table.update_item(
+            Key={'id': user_id},
+            UpdateExpression='SET #status = :status, updated_at = :updated_at',
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues={
+                ':status': 'active',
+                ':updated_at': datetime.utcnow().isoformat()
+            },
+            ReturnValues='ALL_NEW'
+        )
         
-        # Update user status
-        try:
-            response = await table.update_item(
-                Key={'id': user_id},
-                UpdateExpression='SET #status = :status, updated_at = :updated_at',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':status': 'active',
-                    ':updated_at': datetime.utcnow().isoformat()
-                },
-                ReturnValues='ALL_NEW'
-            )
-            
-            user_data = decimal_to_float(response['Attributes'])
-            user_data.pop('hashed_password', None)
-            
-            return User(**user_data)
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
+        user_data = decimal_to_float(response['Attributes'])
+        user_data.pop('hashed_password', None)
+        
+        return User(**user_data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
 
-@router.put("/{user_id}/role")
+@router.put("/{user_id}/role/")
 async def update_user_role(
     user_id: str,
     role: str,
@@ -98,50 +95,48 @@ async def update_user_role(
 ):
     """Update user role"""
     db = get_dynamodb()
-    async with db.get_resource() as dynamodb:
-        table = await dynamodb.Table(settings.USERS_TABLE)
+    table = db.get_table(settings.USERS_TABLE)
+    
+    update_expr = 'SET #role = :role, updated_at = :updated_at'
+    expr_names = {'#role': 'role'}
+    expr_values = {
+        ':role': role,
+        ':updated_at': datetime.utcnow().isoformat()
+    }
+    
+    if custom_role_id:
+        update_expr += ', custom_role = :custom_role'
+        expr_values[':custom_role'] = custom_role_id
+    
+    try:
+        table.update_item(
+            Key={'id': user_id},
+            UpdateExpression=update_expr,
+            ExpressionAttributeNames=expr_names,
+            ExpressionAttributeValues=expr_values
+        )
         
-        update_expr = 'SET #role = :role, updated_at = :updated_at'
-        expr_names = {'#role': 'role'}
-        expr_values = {
-            ':role': role,
-            ':updated_at': datetime.utcnow().isoformat()
-        }
-        
-        if custom_role_id:
-            update_expr += ', custom_role = :custom_role'
-            expr_values[':custom_role'] = custom_role_id
-        
-        try:
-            await table.update_item(
-                Key={'id': user_id},
-                UpdateExpression=update_expr,
-                ExpressionAttributeNames=expr_names,
-                ExpressionAttributeValues=expr_values
-            )
-            
-            return {"message": "User role updated successfully"}
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
+        return {"message": "User role updated successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
 
-@router.delete("/{user_id}")
+@router.delete("/{user_id}/")
 async def delete_user(
     user_id: str,
     current_admin: User = Depends(get_current_admin)
 ):
     """Delete a user"""
     db = get_dynamodb()
-    async with db.get_resource() as dynamodb:
-        table = await dynamodb.Table(settings.USERS_TABLE)
-        
-        try:
-            await table.delete_item(Key={'id': user_id})
-            return {"message": "User deleted successfully"}
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
+    table = db.get_table(settings.USERS_TABLE)
+    
+    try:
+        table.delete_item(Key={'id': user_id})
+        return {"message": "User deleted successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )

@@ -94,9 +94,12 @@ function App() {
   const addModel = async (model) => {
     try {
       const newModel = await modelService.createModel(model)
-      setModels([...models, newModel])
+      // Immediately update state for instant UI feedback
+      setModels(prev => [...prev, newModel])
+      return newModel
     } catch (error) {
       console.error('Error adding model:', error)
+      throw error
     }
   }
 
@@ -112,10 +115,13 @@ function App() {
 
   const deleteModel = async (id) => {
     try {
+      console.log('Deleting model with ID:', id)
       await modelService.deleteModel(id)
       setModels(models.filter(m => (m.id || m._id) !== id))
+      console.log('Model deleted successfully')
     } catch (error) {
       console.error('Error deleting model:', error)
+      alert(`Failed to delete model: ${error.response?.data?.detail || error.message}`)
     }
   }
 
@@ -206,23 +212,54 @@ function App() {
     )
   }
 
-  const createNewChat = async () => {
-    try {
-      const newChat = await chatService.createChat({ title: 'New Chat', messages: [] })
-      setChats([newChat, ...chats])
-      setActiveChat(newChat.id || newChat._id)
-    } catch (error) {
-      console.error('Error creating chat:', error)
+  const createNewChat = () => {
+    // Check if there's already a new chat (one with no messages)
+    const existingNewChat = chats.find(chat => !chat.messages || chat.messages.length === 0)
+    
+    if (existingNewChat) {
+      // If there's already an empty chat, just select it
+      setActiveChat(existingNewChat.id || existingNewChat._id)
+      return
     }
+    
+    // Create a temporary new chat immediately (will be saved when first message is sent)
+    const tempChat = {
+      id: 'temp-' + Date.now(),
+      title: 'New Chat',
+      messages: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      isTemp: true
+    }
+    
+    setChats([tempChat, ...chats])
+    setActiveChat(tempChat.id)
   }
 
   const deleteChat = async (id) => {
     try {
-      await chatService.deleteChat(id)
-      const filtered = chats.filter(chat => (chat.id || chat._id) !== id)
-      setChats(filtered)
-      if (activeChat === id && filtered.length > 0) {
-        setActiveChat(filtered[0].id || filtered[0]._id)
+      // Check if it's a temp chat
+      const chat = chats.find(c => (c.id || c._id) === id)
+      
+      if (chat?.isTemp || id?.toString().startsWith('temp-')) {
+        // Just remove from state, no backend call needed
+        const filtered = chats.filter(chat => (chat.id || chat._id) !== id)
+        setChats(filtered)
+        if (activeChat === id && filtered.length > 0) {
+          setActiveChat(filtered[0].id || filtered[0]._id)
+        } else if (activeChat === id) {
+          setActiveChat(null)
+        }
+      } else {
+        // Real chat, delete from backend
+        await chatService.deleteChat(id)
+        const filtered = chats.filter(chat => (chat.id || chat._id) !== id)
+        setChats(filtered)
+        if (activeChat === id && filtered.length > 0) {
+          setActiveChat(filtered[0].id || filtered[0]._id)
+        } else if (activeChat === id) {
+          setActiveChat(null)
+        }
       }
     } catch (error) {
       console.error('Error deleting chat:', error)
@@ -230,92 +267,202 @@ function App() {
   }
 
   const renameChat = async (id, newTitle) => {
+    // Optimistically update UI immediately
+    setChats(prev => prev.map(chat => 
+      (chat.id || chat._id) === id ? { ...chat, title: newTitle } : chat
+    ))
+    
+    // Update backend in background
     try {
       await chatService.updateChat(id, { title: newTitle })
-      setChats(chats.map(chat => 
-        (chat.id || chat._id) === id ? { ...chat, title: newTitle } : chat
-      ))
     } catch (error) {
       console.error('Error renaming chat:', error)
+      // Optionally: revert the change if API fails
+      loadUserData()
     }
   }
 
   const pinChat = async (id) => {
-    try {
-      const chat = chats.find(c => (c.id || c._id) === id)
-      await chatService.updateChat(id, { pinned: !chat.pinned })
-      setChats(chats.map(chat => 
-        (chat.id || chat._id) === id ? { ...chat, pinned: !chat.pinned } : chat
-      ).sort((a, b) => {
+    // Find the chat and toggle pinned status
+    const chat = chats.find(c => (c.id || c._id) === id)
+    const newPinnedStatus = !chat.pinned
+    
+    // Optimistically update UI immediately with proper sorting
+    setChats(prev => {
+      const updated = prev.map(c => 
+        (c.id || c._id) === id ? { ...c, pinned: newPinnedStatus } : c
+      )
+      // Sort: pinned first, then by updated_at descending
+      return updated.sort((a, b) => {
         if (a.pinned && !b.pinned) return -1
         if (!a.pinned && b.pinned) return 1
-        return 0
-      }))
+        // Both pinned or both unpinned - sort by updated_at
+        const aTime = new Date(a.updated_at || 0).getTime()
+        const bTime = new Date(b.updated_at || 0).getTime()
+        return bTime - aTime
+      })
+    })
+    
+    // Update backend in background
+    try {
+      await chatService.updateChat(id, { pinned: newPinnedStatus })
     } catch (error) {
       console.error('Error pinning chat:', error)
+      // Optionally: revert the change if API fails
+      loadUserData()
     }
   }
 
-  const sendMessage = async (content) => {
+  const sendMessage = async (content, modelId) => {
     try {
-      // If no active chat, create one first
-      if (!activeChat) {
-        const newChat = await chatService.createChat({ title: 'New Chat', messages: [] })
-        setChats([newChat, ...chats])
-        setActiveChat(newChat.id)
+      let chatId = activeChat
+      let isNewChat = false
+      
+      // Check if current chat is temporary or doesn't exist
+      const currentChat = chats.find(c => (c.id || c._id) === chatId)
+      const isTemp = currentChat?.isTemp || !chatId
+      
+      // If no active chat or temp chat, create a real one first
+      if (isTemp || !chatId) {
+        const title = content.slice(0, 30) + (content.length > 30 ? '...' : '')
+        const newChat = await chatService.createChat({ title, messages: [] })
+        chatId = newChat.id
+        isNewChat = true
         
-        // Send message to the new chat
-        await chatService.sendMessage(newChat.id, { role: 'user', content })
-        
-        // Update the new chat with the message
-        const updatedChat = {
-          ...newChat,
-          title: content.slice(0, 30) + (content.length > 30 ? '...' : ''),
-          messages: [{ role: 'user', content, timestamp: new Date().toISOString() }]
-        }
-        setChats([updatedChat, ...chats])
-        
-        // Simulate AI response
-        setTimeout(async () => {
-          await chatService.sendMessage(newChat.id, { 
-            role: 'assistant', 
-            content: 'This is a simulated response. Connect to your LLM API here.' 
-          })
-          const updatedChats = await chatService.getChats()
-          setChats(updatedChats)
-        }, 500)
-        
-        return
+        // Remove temp chat and add real chat
+        setChats(prev => {
+          const filtered = prev.filter(c => !(c.id || c._id)?.toString().startsWith('temp-'))
+          return [newChat, ...filtered]
+        })
+        setActiveChat(chatId)
       }
       
-      // Send message to existing chat
-      await chatService.sendMessage(activeChat, { role: 'user', content })
-      
-      // Update local state
-      setChats(chats.map(chat => {
-        if (chat.id === activeChat || chat._id === activeChat) {
-          const newMessages = [...chat.messages, { role: 'user', content, timestamp: new Date().toISOString() }]
-          const title = chat.messages.length === 0 
+      // Optimistically update UI immediately
+      const userMessage = { role: 'user', content, timestamp: new Date().toISOString() }
+      setChats(prev => prev.map(chat => {
+        if ((chat.id || chat._id) === chatId) {
+          const newMessages = [...(chat.messages || []), userMessage]
+          const title = chat.messages?.length === 0 
             ? content.slice(0, 30) + (content.length > 30 ? '...' : '')
             : chat.title
-          
-          // Simulate AI response
-          setTimeout(async () => {
-            await chatService.sendMessage(activeChat, { 
-              role: 'assistant', 
-              content: 'This is a simulated response. Connect to your LLM API here.' 
-            })
-            const updatedChats = await chatService.getChats()
-            setChats(updatedChats)
-          }, 500)
-
-          return { ...chat, title, messages: newMessages }
+          return { ...chat, title, messages: newMessages, isTemp: false }
         }
         return chat
       }))
+      
+      // Send message to backend (async, don't wait)
+      chatService.sendMessage(chatId, { role: 'user', content }).catch(err => {
+        console.error('Error sending message:', err)
+      })
+      
+      // Get the selected model
+      const model = models.find(m => (m.id || m._id) === modelId)
+      if (!model) {
+        throw new Error('Model not found')
+      }
+      
+      // Call the actual model endpoint
+      const endpoint = model.endpoint || 'https://api.openai.com/v1/chat/completions'
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(model.api_key && { 'Authorization': `Bearer ${model.api_key}` }),
+        ...(model.headers && model.headers.reduce((acc, h) => ({ ...acc, [h.key]: h.value }), {}))
+      }
+      
+      // Get chat history for context
+      const chatForContext = chats.find(c => (c.id || c._id) === chatId)
+      const messages = chatForContext?.messages || []
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          model: model.name,
+          messages: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
+          max_tokens: 1000
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Model API error: ${response.status} ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      const aiContent = data.choices?.[0]?.message?.content || 'No response from model'
+      
+      const aiMessage = { 
+        role: 'assistant', 
+        content: aiContent,
+        timestamp: new Date().toISOString()
+      }
+      
+      // Add AI response immediately
+      setChats(prev => prev.map(chat => {
+        if ((chat.id || chat._id) === chatId) {
+          return { ...chat, messages: [...(chat.messages || []), aiMessage] }
+        }
+        return chat
+      }))
+      
+      // Send AI response to backend (async)
+      chatService.sendMessage(chatId, { 
+        role: 'assistant', 
+        content: aiMessage.content 
+      }).catch(err => {
+        console.error('Error sending AI response:', err)
+      })
+      
+      // Generate title for new chats using LLM
+      if (isNewChat) {
+        generateChatTitle(chatId, content, model, endpoint, headers).catch(err => {
+          console.error('Error generating title:', err)
+        })
+      }
+      
     } catch (error) {
       console.error('Error sending message:', error)
-      alert('Failed to send message. Please try again.')
+      alert(`Failed to send message: ${error.message}`)
+    }
+  }
+  
+  const generateChatTitle = async (chatId, firstMessage, model, endpoint, headers) => {
+    try {
+      // Call LLM to generate a concise title
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          model: model.name,
+          messages: [
+            { 
+              role: 'system', 
+              content: 'Generate a concise, descriptive title (max 6 words) for a chat that starts with this question. Only respond with the title, nothing else.' 
+            },
+            { role: 'user', content: firstMessage }
+          ],
+          max_tokens: 20
+        })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        const title = data.choices?.[0]?.message?.content?.trim() || firstMessage.slice(0, 30)
+        
+        // Update chat title in UI
+        setChats(prev => prev.map(chat => {
+          if ((chat.id || chat._id) === chatId) {
+            return { ...chat, title }
+          }
+          return chat
+        }))
+        
+        // Update title in backend
+        chatService.updateChat(chatId, { title }).catch(err => {
+          console.error('Error updating chat title:', err)
+        })
+      }
+    } catch (error) {
+      console.error('Error generating title:', error)
     }
   }
 
@@ -339,6 +486,7 @@ function App() {
       <ChatWindow 
         chat={currentChat}
         onSendMessage={sendMessage}
+        models={models}
       />
       {showProfile && (
         <Profile 

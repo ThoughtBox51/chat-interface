@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import AddModelModal from './AddModelModal'
 import RoleModal from './RoleModal'
+import { modelService } from '../services/model.service'
 import './AdminPanel.css'
 
 function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, pendingUsers, onApproveUser, onRejectUser, users, onUpdateUserRole, roles, onAddRole, onEditRole, onDeleteRole }) {
@@ -30,20 +31,44 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
   const handleTestModel = async (model) => {
     setTestingModelId(model.id)
     
-    // Simulate API test
-    setTimeout(() => {
-      const success = Math.random() > 0.3
-      setModelTestResults({
-        ...modelTestResults,
-        [model.id]: {
-          success,
-          message: success 
-            ? 'Connection successful!'
-            : 'Connection failed.',
-          timestamp: new Date().toLocaleTimeString()
-        }
+    try {
+      // Test directly to the model endpoint
+      const endpoint = model.endpoint || 'https://api.openai.com/v1/chat/completions'
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(model.api_key && { 'Authorization': `Bearer ${model.api_key}` }),
+        ...(model.headers && model.headers.reduce((acc, h) => ({ ...acc, [h.key]: h.value }), {}))
+      }
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          model: model.name,
+          messages: [{ role: 'user', content: 'test' }],
+          max_tokens: 5
+        })
       })
-      setTestingModelId(null)
+      
+      if (response.ok) {
+        setModelTestResults({
+          ...modelTestResults,
+          [model.id]: {
+            success: true,
+            message: 'Connection successful!',
+            timestamp: new Date().toLocaleTimeString()
+          }
+        })
+      } else {
+        setModelTestResults({
+          ...modelTestResults,
+          [model.id]: {
+            success: false,
+            message: `Connection failed: ${response.status} ${response.statusText}`,
+            timestamp: new Date().toLocaleTimeString()
+          }
+        })
+      }
       
       // Clear result after 5 seconds
       setTimeout(() => {
@@ -53,7 +78,27 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
           return newResults
         })
       }, 5000)
-    }, 2000)
+    } catch (error) {
+      setModelTestResults({
+        ...modelTestResults,
+        [model.id]: {
+          success: false,
+          message: `Test failed: ${error.message}`,
+          timestamp: new Date().toLocaleTimeString()
+        }
+      })
+      
+      // Clear result after 5 seconds
+      setTimeout(() => {
+        setModelTestResults(prev => {
+          const newResults = { ...prev }
+          delete newResults[model.id]
+          return newResults
+        })
+      }, 5000)
+    } finally {
+      setTestingModelId(null)
+    }
   }
 
   return (
@@ -137,7 +182,11 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
                     </button>
                     <button 
                       className="delete-model-btn"
-                      onClick={() => onDeleteModel(model.id)}
+                      onClick={() => {
+                        if (window.confirm(`Are you sure you want to delete the model "${model.name}"? This action cannot be undone.`)) {
+                          onDeleteModel(model.id)
+                        }
+                      }}
                     >
                       Delete
                     </button>

@@ -16,6 +16,13 @@ class ModelBase(BaseModel):
     configuration_type: str = "default"
     body: Optional[str] = None
     is_active: bool = True
+    variables: Optional[Dict] = {}
+    test_response: Optional[str] = None
+    structured_response: bool = False
+    data_generation: bool = False
+    streaming: bool = False
+    tool_calling: Optional[Dict] = {}
+    modalities: Optional[List[str]] = []
 
 class ModelCreate(ModelBase):
     api_key: Optional[str] = None
@@ -31,6 +38,13 @@ class ModelUpdate(BaseModel):
     configuration_type: Optional[str] = None
     body: Optional[str] = None
     is_active: Optional[bool] = None
+    variables: Optional[Dict] = None
+    test_response: Optional[str] = None
+    structured_response: Optional[bool] = None
+    data_generation: Optional[bool] = None
+    streaming: Optional[bool] = None
+    tool_calling: Optional[Dict] = None
+    modalities: Optional[List[str]] = None
 
 class ModelInDB(ModelBase):
     id: str
@@ -52,6 +66,15 @@ class Model(BaseModel):
     auth_profile: str
     configuration_type: str
     is_active: bool
+    headers: Optional[List[Header]] = []
+    variables: Optional[Dict] = {}
+    body: Optional[str] = None
+    test_response: Optional[str] = None
+    structured_response: bool = False
+    data_generation: bool = False
+    streaming: bool = False
+    tool_calling: Optional[Dict] = {}
+    modalities: Optional[List[str]] = []
     created_by: str
     created_at: datetime
     updated_at: datetime
