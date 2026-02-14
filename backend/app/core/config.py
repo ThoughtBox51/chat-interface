@@ -40,7 +40,7 @@ class Settings(BaseSettings):
         return v
     
     class Config:
-        env_file = "backend/.env"  # Look for .env in backend directory
+        env_file = ".env"
         case_sensitive = True
         extra = "ignore"  # Ignore extra fields from .env
 
