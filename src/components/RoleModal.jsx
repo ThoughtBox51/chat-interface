@@ -2,31 +2,61 @@ import { useState } from 'react'
 import './RoleModal.css'
 
 function RoleModal({ onClose, onSave, editRole, models }) {
-  const [roleData, setRoleData] = useState(editRole || {
-    name: '',
-    description: '',
-    permissions: {
-      models: {},
-      features: {
-        chat: false,
-        history: false,
-        export: false,
-        share: false,
-        settings: false,
-        profile: false
-      },
-      admin: {
-        manageUsers: false,
-        manageModels: false,
-        manageRoles: false,
-        viewAnalytics: false,
-        systemSettings: false
+  const [roleData, setRoleData] = useState(() => {
+    // Ensure all fields are present, even when editing existing roles
+    const defaultData = {
+      name: '',
+      description: '',
+      max_chats: null,
+      max_tokens_per_month: null,
+      context_length: 4096,
+      permissions: {
+        models: {},
+        features: {
+          chat: false,
+          history: false,
+          export: false,
+          share: false,
+          settings: false,
+          profile: false
+        },
+        admin: {
+          manageUsers: false,
+          manageModels: false,
+          manageRoles: false,
+          viewAnalytics: false,
+          systemSettings: false
+        }
       }
     }
+    
+    // Merge with editRole data if provided
+    if (editRole) {
+      return {
+        ...defaultData,
+        ...editRole,
+        // Ensure limits are properly set (convert undefined to null)
+        max_chats: editRole.max_chats !== undefined ? editRole.max_chats : null,
+        max_tokens_per_month: editRole.max_tokens_per_month !== undefined ? editRole.max_tokens_per_month : null,
+        context_length: editRole.context_length !== undefined ? editRole.context_length : 4096,
+        permissions: {
+          ...defaultData.permissions,
+          ...editRole.permissions
+        }
+      }
+    }
+    
+    return defaultData
   })
 
   const handleSave = () => {
-    onSave({ ...roleData, id: editRole?.id || Date.now() })
+    // Use the correct ID field (id for roles, not _id)
+    const roleToSave = {
+      ...roleData,
+      id: editRole?.id || editRole?._id
+    }
+    console.log('Saving role with data:', roleToSave)
+    onSave(roleToSave)
     onClose()
   }
 
@@ -119,6 +149,59 @@ function RoleModal({ onClose, onSave, editRole, models }) {
               onChange={(e) => setRoleData({ ...roleData, description: e.target.value })}
               rows="2"
             />
+          </div>
+
+          <div className="permissions-section">
+            <h3>Usage Limits</h3>
+            <p className="section-description">Set resource limits for this role (leave empty for unlimited)</p>
+            
+            <div className="limits-grid">
+              <div className="form-field">
+                <label>Max Chats</label>
+                <input
+                  type="number"
+                  placeholder="Unlimited"
+                  min="0"
+                  value={roleData.max_chats || ''}
+                  onChange={(e) => setRoleData({ 
+                    ...roleData, 
+                    max_chats: e.target.value ? parseInt(e.target.value) : null 
+                  })}
+                />
+                <span className="field-hint">Maximum number of chats this role can create</span>
+              </div>
+
+              <div className="form-field">
+                <label>Max Tokens per Month</label>
+                <input
+                  type="number"
+                  placeholder="Unlimited"
+                  min="0"
+                  value={roleData.max_tokens_per_month || ''}
+                  onChange={(e) => setRoleData({ 
+                    ...roleData, 
+                    max_tokens_per_month: e.target.value ? parseInt(e.target.value) : null 
+                  })}
+                />
+                <span className="field-hint">Monthly token usage limit</span>
+              </div>
+
+              <div className="form-field">
+                <label>Context Length</label>
+                <input
+                  type="number"
+                  placeholder="4096"
+                  min="512"
+                  max="128000"
+                  value={roleData.context_length || 4096}
+                  onChange={(e) => setRoleData({ 
+                    ...roleData, 
+                    context_length: e.target.value ? parseInt(e.target.value) : 4096 
+                  })}
+                />
+                <span className="field-hint">Maximum context length for chat sessions</span>
+              </div>
+            </div>
           </div>
 
           <div className="permissions-section">

@@ -22,6 +22,8 @@ class UserInDB(UserBase):
     status: str = "pending"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    tokens_used_this_month: int = 0
+    token_usage_reset_date: Optional[datetime] = None
 
 class User(UserBase):
     id: str

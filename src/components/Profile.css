@@ -169,3 +169,80 @@
 .save-btn:hover {
   background: #0d8c6d;
 }
+
+.usage-stats-section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #444654;
+}
+
+.usage-stats-section h3 {
+  color: #ececf1;
+  font-size: 18px;
+  margin: 0 0 20px 0;
+}
+
+.stat-item {
+  margin-bottom: 20px;
+}
+
+.stat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.stat-header label {
+  color: #ececf1;
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.stat-value {
+  color: #8e8ea0;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #40414f;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  transition: width 0.3s ease, background-color 0.3s ease;
+  border-radius: 4px;
+}
+
+.stat-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #8e8ea0;
+}
+
+.disabled-input {
+  background: #2a2b32 !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+  opacity: 0.7;
+}
+
+.disabled-input:hover {
+  border-color: #565869 !important;
+}
+
+.field-hint {
+  display: block;
+  color: #6b7280;
+  font-size: 12px;
+  margin-top: 6px;
+  font-style: italic;
+}

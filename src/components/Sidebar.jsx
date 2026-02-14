@@ -1,14 +1,31 @@
 import { useState, useRef, useEffect } from 'react'
 import './Sidebar.css'
 import './LoadingSkeleton.css'
+import { roleService } from '../services/role.service'
+import { formatTokenCount, calculatePercentage } from '../utils/tokenCounter'
 
 function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, user, onLogout, onOpenProfile, onRenameChat, onPinChat, onOpenAdmin, loading }) {
   const [showMenu, setShowMenu] = useState(false)
   const [showChatMenu, setShowChatMenu] = useState(null)
   const [renameId, setRenameId] = useState(null)
   const [renameValue, setRenameValue] = useState('')
+  const [limits, setLimits] = useState(null)
   const menuRef = useRef(null)
   const chatMenuRef = useRef(null)
+
+  useEffect(() => {
+    const fetchLimits = async () => {
+      try {
+        const limitsData = await roleService.getCurrentUserLimits()
+        setLimits(limitsData)
+      } catch (error) {
+        console.error('Error fetching limits:', error)
+      }
+    }
+    if (user) {
+      fetchLimits()
+    }
+  }, [user])
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -165,6 +182,26 @@ function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, use
       </div>
 
       <div className="sidebar-footer" ref={menuRef}>
+        {limits && limits.max_tokens_per_month && (
+          <div className="token-usage-bar">
+            <div className="token-usage-info">
+              <span className="token-label">Tokens</span>
+              <span className="token-value">
+                {calculatePercentage(limits.tokens_used_this_month, limits.max_tokens_per_month)}%
+              </span>
+            </div>
+            <div className="mini-progress-bar">
+              <div 
+                className="mini-progress-fill"
+                style={{ 
+                  width: `${calculatePercentage(limits.tokens_used_this_month, limits.max_tokens_per_month)}%`,
+                  backgroundColor: calculatePercentage(limits.tokens_used_this_month, limits.max_tokens_per_month) > 90 ? '#ef4444' : '#10a37f'
+                }}
+              />
+            </div>
+          </div>
+        )}
+        
         <div className="user-profile" onClick={() => setShowMenu(!showMenu)}>
           <div className="avatar-placeholder">
             {user?.name?.charAt(0).toUpperCase() || 'U'}

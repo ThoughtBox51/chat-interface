@@ -1,14 +1,30 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './Profile.css'
+import { roleService } from '../services/role.service'
+import { formatTokenCount, calculatePercentage } from '../utils/tokenCounter'
 
 function Profile({ user, onUpdateProfile, onClose }) {
   const [name, setName] = useState(user.name || '')
   const [email, setEmail] = useState(user.email || '')
   const [bio, setBio] = useState(user.bio || '')
+  const [limits, setLimits] = useState(null)
+
+  useEffect(() => {
+    const fetchLimits = async () => {
+      try {
+        const limitsData = await roleService.getCurrentUserLimits()
+        setLimits(limitsData)
+      } catch (error) {
+        console.error('Error fetching limits:', error)
+      }
+    }
+    fetchLimits()
+  }, [])
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    onUpdateProfile({ ...user, name, email, bio })
+    // Only send name and bio (email cannot be changed)
+    onUpdateProfile({ name, bio })
     onClose()
   }
 
@@ -46,10 +62,11 @@ function Profile({ user, onUpdateProfile, onClose }) {
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email"
-              required
+              disabled
+              className="disabled-input"
+              title="Email cannot be changed"
             />
+            <span className="field-hint">Email cannot be changed</span>
           </div>
 
           <div className="profile-form-group">
@@ -61,6 +78,34 @@ function Profile({ user, onUpdateProfile, onClose }) {
               rows="4"
             />
           </div>
+
+          {limits && limits.max_tokens_per_month && (
+            <div className="usage-stats-section">
+              <h3>Usage Statistics</h3>
+              
+              <div className="stat-item">
+                <div className="stat-header">
+                  <label>Token Usage This Month</label>
+                  <span className="stat-value">
+                    {formatTokenCount(limits.tokens_used_this_month)} / {formatTokenCount(limits.max_tokens_per_month)}
+                  </span>
+                </div>
+                <div className="progress-bar">
+                  <div 
+                    className="progress-fill"
+                    style={{ 
+                      width: `${calculatePercentage(limits.tokens_used_this_month, limits.max_tokens_per_month)}%`,
+                      backgroundColor: calculatePercentage(limits.tokens_used_this_month, limits.max_tokens_per_month) > 90 ? '#ef4444' : '#10a37f'
+                    }}
+                  />
+                </div>
+                <div className="stat-footer">
+                  <span>{calculatePercentage(limits.tokens_used_this_month, limits.max_tokens_per_month)}% used</span>
+                  <span>{formatTokenCount(limits.max_tokens_per_month - limits.tokens_used_this_month)} remaining</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="profile-actions">
             <button type="button" className="cancel-btn" onClick={onClose}>

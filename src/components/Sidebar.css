@@ -254,3 +254,43 @@
   margin: 4px 0;
   border-radius: 6px;
 }
+
+.token-usage-bar {
+  padding: 12px;
+  background: #2a2b32;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.token-usage-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.token-label {
+  color: #8e8ea0;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.token-value {
+  color: #ececf1;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mini-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: #40414f;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mini-progress-fill {
+  height: 100%;
+  transition: width 0.3s ease, background-color 0.3s ease;
+  border-radius: 2px;
+}

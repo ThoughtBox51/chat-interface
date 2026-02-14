@@ -13,19 +13,23 @@ router = APIRouter()
 
 @router.get("/", response_model=List[Chat])
 async def get_chats(current_user: User = Depends(get_current_user)):
-    """Get all user chats"""
+    """Get all user chats (optimized with GSI query)"""
     db = get_dynamodb()
     table = db.get_table(settings.CHATS_TABLE)
     
-    # Scan for user's chats
-    response = table.scan(
-        FilterExpression='user_id = :user_id',
-        ExpressionAttributeValues={':user_id': current_user.id}
+    # Use GSI query instead of scan for much better performance
+    # This queries the user-id-index and automatically sorts by updated_at (newest first)
+    response = table.query(
+        IndexName='user-id-index',
+        KeyConditionExpression='user_id = :user_id',
+        ExpressionAttributeValues={':user_id': current_user.id},
+        ScanIndexForward=False,  # Sort descending (newest first)
+        Limit=50  # Limit to 50 most recent chats for faster initial load
     )
     
     chats = [decimal_to_float(item) for item in response.get('Items', [])]
     
-    # Sort by pinned and updated_at
+    # Sort by pinned status (pinned chats first), then by updated_at
     chats.sort(key=lambda x: (not x.get('pinned', False), x.get('updated_at', '')), reverse=True)
     
     return chats
@@ -37,7 +41,30 @@ def create_chat(
 ):
     """Create a new chat"""
     db = get_dynamodb()
-    table = db.get_table(settings.CHATS_TABLE)
+    chats_table = db.get_table(settings.CHATS_TABLE)
+    
+    # Check chat limit for user's role
+    if current_user.custom_role:
+        roles_table = db.get_table(settings.ROLES_TABLE)
+        role_response = roles_table.get_item(Key={'id': current_user.custom_role})
+        
+        if 'Item' in role_response:
+            role = decimal_to_float(role_response['Item'])
+            max_chats = role.get('max_chats')
+            
+            if max_chats is not None:
+                # Count existing chats for this user
+                chats_response = chats_table.scan(
+                    FilterExpression='user_id = :user_id',
+                    ExpressionAttributeValues={':user_id': current_user.id}
+                )
+                current_chat_count = len(chats_response.get('Items', []))
+                
+                if current_chat_count >= max_chats:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Chat limit reached. Your role allows maximum {max_chats} chats."
+                    )
     
     chat_dict = chat_data.model_dump()
     chat_dict['id'] = str(uuid.uuid4())
@@ -47,7 +74,7 @@ def create_chat(
     chat_dict['created_at'] = datetime.utcnow().isoformat()
     chat_dict['updated_at'] = datetime.utcnow().isoformat()
     
-    table.put_item(Item=chat_dict)
+    chats_table.put_item(Item=chat_dict)
     
     return Chat(**chat_dict)
 
@@ -148,10 +175,10 @@ def send_message(
 ):
     """Send a message in a chat"""
     db = get_dynamodb()
-    table = db.get_table(settings.CHATS_TABLE)
+    chats_table = db.get_table(settings.CHATS_TABLE)
     
     # First verify the chat belongs to the user
-    response = table.get_item(Key={'id': chat_id})
+    response = chats_table.get_item(Key={'id': chat_id})
     
     if 'Item' not in response:
         raise HTTPException(
@@ -167,6 +194,26 @@ def send_message(
             detail="Not authorized to send messages in this chat"
         )
     
+    # Check context length limit
+    if current_user.custom_role:
+        roles_table = db.get_table(settings.ROLES_TABLE)
+        role_response = roles_table.get_item(Key={'id': current_user.custom_role})
+        
+        if 'Item' in role_response:
+            role = decimal_to_float(role_response['Item'])
+            context_length = role.get('context_length', 4096)
+            
+            # Estimate current token count (rough: 4 chars per token)
+            messages = chat.get('messages', [])
+            current_tokens = sum(len(msg.get('content', '')) // 4 + 10 for msg in messages)
+            new_message_tokens = len(message.content) // 4 + 10
+            
+            if current_tokens + new_message_tokens > context_length:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Context length limit exceeded. Current: ~{current_tokens} tokens, Limit: {context_length} tokens. Please start a new chat."
+                )
+    
     message_dict = message.model_dump()
     message_dict['timestamp'] = datetime.utcnow().isoformat()
     
@@ -175,7 +222,7 @@ def send_message(
     messages.append(message_dict)
     
     # Update chat with new message
-    response = table.update_item(
+    response = chats_table.update_item(
         Key={'id': chat_id},
         UpdateExpression='SET messages = :messages, updated_at = :updated_at',
         ExpressionAttributeValues={
@@ -188,3 +235,45 @@ def send_message(
     updated_chat = decimal_to_float(response['Attributes'])
     
     return Chat(**updated_chat)
+
+
+@router.get("/paginated/", response_model=dict)
+async def get_chats_paginated(
+    limit: int = 20,
+    last_key: str = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Get user chats with pagination support"""
+    db = get_dynamodb()
+    table = db.get_table(settings.CHATS_TABLE)
+    
+    query_params = {
+        'IndexName': 'user-id-index',
+        'KeyConditionExpression': 'user_id = :user_id',
+        'ExpressionAttributeValues': {':user_id': current_user.id},
+        'ScanIndexForward': False,
+        'Limit': limit
+    }
+    
+    # Add pagination token if provided
+    if last_key:
+        import json
+        query_params['ExclusiveStartKey'] = json.loads(last_key)
+    
+    response = table.query(**query_params)
+    
+    chats = [decimal_to_float(item) for item in response.get('Items', [])]
+    
+    # Sort by pinned status
+    chats.sort(key=lambda x: (not x.get('pinned', False), x.get('updated_at', '')), reverse=True)
+    
+    result = {
+        'chats': chats,
+        'has_more': 'LastEvaluatedKey' in response
+    }
+    
+    if 'LastEvaluatedKey' in response:
+        import json
+        result['last_key'] = json.dumps(response['LastEvaluatedKey'])
+    
+    return result

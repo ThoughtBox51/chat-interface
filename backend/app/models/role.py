@@ -31,6 +31,9 @@ class RoleBase(BaseModel):
     name: str
     description: str
     permissions: Permissions
+    max_chats: Optional[int] = None  # None means unlimited
+    max_tokens_per_month: Optional[int] = None  # None means unlimited
+    context_length: Optional[int] = 4096  # Default context length
 
 class RoleCreate(RoleBase):
     pass
@@ -39,6 +42,9 @@ class RoleUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     permissions: Optional[Permissions] = None
+    max_chats: Optional[int] = None
+    max_tokens_per_month: Optional[int] = None
+    context_length: Optional[int] = None
 
 class RoleInDB(RoleBase):
     id: str

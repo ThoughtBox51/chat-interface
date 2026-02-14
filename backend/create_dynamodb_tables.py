@@ -56,7 +56,19 @@ TABLES = {
             {'AttributeName': 'id', 'KeyType': 'HASH'}
         ],
         'AttributeDefinitions': [
-            {'AttributeName': 'id', 'AttributeType': 'S'}
+            {'AttributeName': 'id', 'AttributeType': 'S'},
+            {'AttributeName': 'user_id', 'AttributeType': 'S'},
+            {'AttributeName': 'updated_at', 'AttributeType': 'S'}
+        ],
+        'GlobalSecondaryIndexes': [
+            {
+                'IndexName': 'user-id-index',
+                'KeySchema': [
+                    {'AttributeName': 'user_id', 'KeyType': 'HASH'},
+                    {'AttributeName': 'updated_at', 'KeyType': 'RANGE'}
+                ],
+                'Projection': {'ProjectionType': 'ALL'}
+            }
         ]
     }
 }

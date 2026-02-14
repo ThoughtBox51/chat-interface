@@ -73,6 +73,42 @@ function App() {
     }
   }
 
+  const refreshPendingUsers = async () => {
+    try {
+      const pendingData = await userService.getPendingUsers()
+      setPendingUsers(pendingData)
+    } catch (error) {
+      console.error('Error refreshing pending users:', error)
+    }
+  }
+
+  const refreshUsers = async () => {
+    try {
+      const usersData = await userService.getUsers()
+      setAllUsers(usersData)
+    } catch (error) {
+      console.error('Error refreshing users:', error)
+    }
+  }
+
+  const refreshRoles = async () => {
+    try {
+      const rolesData = await roleService.getRoles()
+      setRoles(rolesData)
+    } catch (error) {
+      console.error('Error refreshing roles:', error)
+    }
+  }
+
+  const refreshModels = async () => {
+    try {
+      const modelsData = await modelService.getModels()
+      setModels(modelsData)
+    } catch (error) {
+      console.error('Error refreshing models:', error)
+    }
+  }
+
   const handleLogin = (userData) => {
     setUser(userData)
     loadUserData()
@@ -85,13 +121,14 @@ function App() {
     setActiveChat(null)
   }
 
-  const handleUpdateProfile = async (updatedUser) => {
+  const handleUpdateProfile = async (profileData) => {
     try {
-      const updated = await authService.updateProfile(updatedUser)
+      const updated = await authService.updateProfile(profileData)
       setUser(updated)
       localStorage.setItem('user', JSON.stringify(updated))
     } catch (error) {
       console.error('Error updating profile:', error)
+      alert(`Failed to update profile: ${error.response?.data?.detail || error.message}`)
     }
   }
 
@@ -148,12 +185,32 @@ function App() {
     }
   }
 
-  const updateUserRole = async (id, role) => {
+  const updateUserRole = async (id, selectedValue) => {
     try {
-      await userService.updateUserRole(id, role)
-      setAllUsers(allUsers.map(u => (u.id || u._id) === id ? { ...u, role } : u))
+      // Determine if it's admin or a custom role
+      let role, customRoleId
+      
+      if (selectedValue === 'admin') {
+        role = 'admin'
+        customRoleId = null
+      } else {
+        // It's a custom role ID
+        role = 'user'
+        customRoleId = selectedValue
+      }
+      
+      await userService.updateUserRole(id, role, customRoleId)
+      
+      // Update local state
+      setAllUsers(allUsers.map(u => {
+        if ((u.id || u._id) === id) {
+          return { ...u, role, custom_role: customRoleId }
+        }
+        return u
+      }))
     } catch (error) {
       console.error('Error updating user role:', error)
+      alert(`Failed to update user role: ${error.response?.data?.detail || error.message}`)
     }
   }
 
@@ -178,10 +235,15 @@ function App() {
 
   const editRole = async (updatedRole) => {
     try {
-      const updated = await roleService.updateRole(updatedRole._id, updatedRole)
-      setRoles(roles.map(r => r._id === updated._id ? updated : r))
+      console.log('Editing role with data:', updatedRole)
+      const roleId = updatedRole.id || updatedRole._id
+      const updated = await roleService.updateRole(roleId, updatedRole)
+      console.log('Role updated successfully:', updated)
+      setRoles(roles.map(r => (r.id || r._id) === (updated.id || updated._id) ? updated : r))
     } catch (error) {
       console.error('Error updating role:', error)
+      console.error('Error response:', error.response?.data)
+      alert(`Failed to update role: ${error.response?.data?.detail || error.message}`)
     }
   }
 
@@ -219,16 +281,20 @@ function App() {
         onAddModel={addModel}
         onEditModel={editModel}
         onDeleteModel={deleteModel}
+        onRefreshModels={refreshModels}
         pendingUsers={pendingUsers}
         onApproveUser={approveUser}
         onRejectUser={rejectUser}
+        onRefreshPendingUsers={refreshPendingUsers}
         users={allUsers}
         onUpdateUserRole={updateUserRole}
         onDeleteUser={deleteUser}
+        onRefreshUsers={refreshUsers}
         roles={roles}
         onAddRole={addRole}
         onEditRole={editRole}
         onDeleteRole={deleteRole}
+        onRefreshRoles={refreshRoles}
       />
     )
   }

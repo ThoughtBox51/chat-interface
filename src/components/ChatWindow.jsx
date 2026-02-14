@@ -1,10 +1,37 @@
 import { useState, useRef, useEffect } from 'react'
 import './ChatWindow.css'
+import { roleService } from '../services/role.service'
+import { countChatTokens, formatTokenCount, calculatePercentage } from '../utils/tokenCounter'
 
 function ChatWindow({ chat, onSendMessage, models = [], sending }) {
   const [input, setInput] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
+  const [limits, setLimits] = useState(null)
+  const [currentTokens, setCurrentTokens] = useState(0)
   const messagesEndRef = useRef(null)
+
+  useEffect(() => {
+    const fetchLimits = async () => {
+      try {
+        const limitsData = await roleService.getCurrentUserLimits()
+        console.log('Fetched limits:', limitsData)
+        setLimits(limitsData)
+      } catch (error) {
+        console.error('Error fetching limits:', error)
+      }
+    }
+    fetchLimits()
+  }, [])
+
+  useEffect(() => {
+    if (chat?.messages) {
+      const tokens = countChatTokens(chat.messages)
+      console.log('Current tokens:', tokens, 'Limits:', limits)
+      setCurrentTokens(tokens)
+    } else {
+      setCurrentTokens(0)
+    }
+  }, [chat?.messages, limits])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -88,11 +115,28 @@ function ChatWindow({ chat, onSendMessage, models = [], sending }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (input.trim() && !sending && selectedModel) {
+      // Only check context limit if one is actually set (not null/undefined)
+      if (limits && limits.context_length !== null && limits.context_length !== undefined) {
+        const estimatedNewTokens = Math.ceil(input.length / 4) + 10 // Estimate tokens for new message
+        const projectedTotal = currentTokens + estimatedNewTokens
+        
+        if (projectedTotal > limits.context_length) {
+          alert(`Context limit reached! This chat has used ${formatTokenCount(currentTokens)} of ${formatTokenCount(limits.context_length)} tokens. Please start a new chat to continue.`)
+          return
+        }
+      }
+      
       const message = input
       setInput('')
       await onSendMessage(message, selectedModel)
     }
   }
+
+  // Only show limit reached if there's actually a limit set
+  const isContextLimitReached = limits && 
+    limits.context_length !== null && 
+    limits.context_length !== undefined && 
+    currentTokens >= limits.context_length
 
   return (
     <div className="chat-window">
@@ -113,6 +157,35 @@ function ChatWindow({ chat, onSendMessage, models = [], sending }) {
             ))
           )}
         </select>
+        
+        {(() => {
+          const shouldShow = limits && limits.context_length !== null && limits.context_length !== undefined && chat?.messages?.length > 0
+          console.log('Context indicator check:', {
+            limits,
+            hasContextLength: limits?.context_length,
+            isNotNull: limits?.context_length !== null,
+            isNotUndefined: limits?.context_length !== undefined,
+            hasMessages: chat?.messages?.length > 0,
+            shouldShow
+          })
+          return shouldShow ? (
+            <div className="context-indicator">
+              <span className="context-label">Context:</span>
+              <span className="context-value">
+                {formatTokenCount(currentTokens)} / {formatTokenCount(limits.context_length)}
+              </span>
+              <div className="context-bar">
+                <div 
+                  className="context-fill"
+                  style={{ 
+                    width: `${calculatePercentage(currentTokens, limits.context_length)}%`,
+                    backgroundColor: calculatePercentage(currentTokens, limits.context_length) > 90 ? '#ef4444' : '#10a37f'
+                  }}
+                />
+              </div>
+            </div>
+          ) : null
+        })()}
       </div>
 
       <div className="messages">
@@ -146,17 +219,29 @@ function ChatWindow({ chat, onSendMessage, models = [], sending }) {
       </div>
 
       <form className="input-form" onSubmit={handleSubmit}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Send a message..."
-          className="message-input"
-          disabled={sending}
-        />
-        <button type="submit" className="send-btn" disabled={sending}>
-          {sending ? 'Sending...' : 'Send'}
-        </button>
+        {isContextLimitReached && (
+          <div className="context-warning">
+            ⚠️ Context limit reached. Start a new chat to continue.
+          </div>
+        )}
+        <div className="input-form-controls">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={isContextLimitReached ? "Context limit reached - start new chat" : "Send a message..."}
+            className="message-input"
+            disabled={sending || isContextLimitReached}
+          />
+          <button 
+            type="submit" 
+            className="send-btn" 
+            disabled={sending || isContextLimitReached}
+            title={isContextLimitReached ? "Context limit reached" : ""}
+          >
+            {sending ? 'Sending...' : 'Send'}
+          </button>
+        </div>
       </form>
     </div>
   )

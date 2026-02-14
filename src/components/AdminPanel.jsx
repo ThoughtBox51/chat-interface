@@ -4,7 +4,7 @@ import RoleModal from './RoleModal'
 import { modelService } from '../services/model.service'
 import './AdminPanel.css'
 
-function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, pendingUsers, onApproveUser, onRejectUser, users, onUpdateUserRole, onDeleteUser, roles, onAddRole, onEditRole, onDeleteRole }) {
+function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, onRefreshModels, pendingUsers, onApproveUser, onRejectUser, onRefreshPendingUsers, users, onUpdateUserRole, onDeleteUser, onRefreshUsers, roles, onAddRole, onEditRole, onDeleteRole, onRefreshRoles }) {
   const [activeTab, setActiveTab] = useState('models')
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingModel, setEditingModel] = useState(null)
@@ -12,6 +12,18 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
   const [modelTestResults, setModelTestResults] = useState({})
   const [showRoleModal, setShowRoleModal] = useState(false)
   const [editingRole, setEditingRole] = useState(null)
+  const [refreshing, setRefreshing] = useState({
+    models: false,
+    signups: false,
+    users: false,
+    roles: false
+  })
+
+  const handleRefresh = async (section, refreshFn) => {
+    setRefreshing({ ...refreshing, [section]: true })
+    await refreshFn()
+    setRefreshing({ ...refreshing, [section]: false })
+  }
 
   const handleAddModel = (modelData) => {
     if (modelData.id) {
@@ -143,9 +155,19 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
           <div className="models-section">
             <div className="section-header">
               <h3>Models</h3>
-              <button className="add-model-btn" onClick={() => setShowAddModal(true)}>
-                <span>+</span> Add Model
-              </button>
+              <div className="header-actions">
+                <button 
+                  className="refresh-btn" 
+                  onClick={() => handleRefresh('models', onRefreshModels)}
+                  disabled={refreshing.models}
+                  title="Refresh models"
+                >
+                  {refreshing.models ? '⟳' : '↻'}
+                </button>
+                <button className="add-model-btn" onClick={() => setShowAddModal(true)}>
+                  <span>+</span> Add Model
+                </button>
+              </div>
             </div>
             <div className="models-list">
               {models.map(model => (
@@ -202,6 +224,14 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
           <div className="signups-section">
             <div className="section-header">
               <h3>Pending Signup Requests</h3>
+              <button 
+                className="refresh-btn" 
+                onClick={() => handleRefresh('signups', onRefreshPendingUsers)}
+                disabled={refreshing.signups}
+                title="Refresh pending users"
+              >
+                {refreshing.signups ? '⟳' : '↻'}
+              </button>
             </div>
               {pendingUsers.length === 0 ? (
                 <p className="empty-message">No pending signup requests</p>
@@ -239,6 +269,14 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
           <div className="users-section">
             <div className="section-header">
               <h3>Manage Users</h3>
+              <button 
+                className="refresh-btn" 
+                onClick={() => handleRefresh('users', onRefreshUsers)}
+                disabled={refreshing.users}
+                title="Refresh users"
+              >
+                {refreshing.users ? '⟳' : '↻'}
+              </button>
             </div>
               <div className="users-list">
               {users.map(user => (
@@ -249,7 +287,7 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
                   </div>
                   <div className="user-actions">
                     <select 
-                      value={user.role}
+                      value={user.role === 'admin' ? 'admin' : (user.custom_role || user.role)}
                       onChange={(e) => onUpdateUserRole(user.id, e.target.value)}
                       className="role-select"
                     >
@@ -281,12 +319,22 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
           <div className="roles-section">
             <div className="section-header">
               <h3>Roles & Permissions</h3>
-              <button className="add-model-btn" onClick={() => {
-                setEditingRole(null)
-                setShowRoleModal(true)
-              }}>
-                <span>+</span> Create Role
-              </button>
+              <div className="header-actions">
+                <button 
+                  className="refresh-btn" 
+                  onClick={() => handleRefresh('roles', onRefreshRoles)}
+                  disabled={refreshing.roles}
+                  title="Refresh roles"
+                >
+                  {refreshing.roles ? '⟳' : '↻'}
+                </button>
+                <button className="add-model-btn" onClick={() => {
+                  setEditingRole(null)
+                  setShowRoleModal(true)
+                }}>
+                  <span>+</span> Create Role
+                </button>
+              </div>
             </div>
 
             <div className="roles-list">
@@ -317,6 +365,17 @@ function AdminPanel({ onClose, models, onAddModel, onDeleteModel, onEditModel, p
                       </span>
                       <span className="stat-badge">
                         {Object.values(role.permissions.admin).filter(Boolean).length} Admin
+                      </span>
+                    </div>
+                    <div className="role-limits">
+                      <span className="limit-badge">
+                        Chats: {role.max_chats ?? '∞'}
+                      </span>
+                      <span className="limit-badge">
+                        Tokens/mo: {role.max_tokens_per_month ? role.max_tokens_per_month.toLocaleString() : '∞'}
+                      </span>
+                      <span className="limit-badge">
+                        Context: {role.context_length || 4096}
                       </span>
                     </div>
                   </div>

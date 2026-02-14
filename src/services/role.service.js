@@ -19,5 +19,10 @@ export const roleService = {
   async deleteRole(id) {
     const response = await api.delete(`/roles/${id}/`)
     return response.data
+  },
+
+  async getCurrentUserLimits() {
+    const response = await api.get('/roles/current/limits')
+    return response.data
   }
 }

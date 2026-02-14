@@ -22,7 +22,7 @@ export const authService = {
 
   async updateProfile(data) {
     const response = await api.put('/auth/profile', data)
-    return response.data.user
+    return response.data  // Backend returns User directly, not wrapped
   },
 
   logout() {

@@ -7,7 +7,7 @@ from app.core.database import get_dynamodb
 from app.core.config import settings
 from app.models.role import RoleCreate, RoleUpdate, Role
 from app.models.user import User
-from app.api.deps import get_current_admin, decimal_to_float
+from app.api.deps import get_current_admin, get_current_user, decimal_to_float
 
 router = APIRouter()
 
@@ -64,7 +64,9 @@ async def update_role(
     db = get_dynamodb()
     table = db.get_table(settings.ROLES_TABLE)
     
-    update_dict = {k: v for k, v in role_data.model_dump().items() if v is not None}
+    # Get all fields from role_data, including None values for limits
+    # (None means unlimited, so we need to preserve it)
+    update_dict = role_data.model_dump(exclude_unset=True)
     
     if not update_dict:
         raise HTTPException(
@@ -82,7 +84,8 @@ async def update_role(
         attr_value = f':{key}'
         update_expr += f', {attr_name} = {attr_value}'
         expr_names[attr_name] = key
-        expr_values[attr_value] = value
+        # DynamoDB doesn't support None, so use NULL for None values
+        expr_values[attr_value] = value if value is not None else None
     
     try:
         response = table.update_item(
@@ -97,9 +100,10 @@ async def update_role(
         
         return Role(**updated_role)
     except Exception as e:
+        print(f"Error updating role: {e}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Role not found"
+            detail=f"Role not found or update failed: {str(e)}"
         )
 
 @router.delete("/{role_id}/")
@@ -119,3 +123,39 @@ async def delete_role(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Role not found"
         )
+
+
+@router.get("/current/limits")
+async def get_current_user_limits(current_user: User = Depends(get_current_user)):
+    """Get role limits for the current user"""
+    if not current_user.custom_role:
+        # Users without custom_role (like admins) have no limits
+        return {
+            "max_chats": None,
+            "max_tokens_per_month": None,
+            "context_length": None,  # None means unlimited/not enforced
+            "tokens_used_this_month": 0
+        }
+    
+    db = get_dynamodb()
+    roles_table = db.get_table(settings.ROLES_TABLE)
+    
+    role_response = roles_table.get_item(Key={'id': current_user.custom_role})
+    
+    if 'Item' not in role_response:
+        # If custom_role is set but role not found, return defaults
+        return {
+            "max_chats": None,
+            "max_tokens_per_month": None,
+            "context_length": None,
+            "tokens_used_this_month": 0
+        }
+    
+    role = decimal_to_float(role_response['Item'])
+    
+    return {
+        "max_chats": role.get('max_chats'),
+        "max_tokens_per_month": role.get('max_tokens_per_month'),
+        "context_length": role.get('context_length'),  # Can be None for unlimited
+        "tokens_used_this_month": getattr(current_user, 'tokens_used_this_month', 0)
+    }

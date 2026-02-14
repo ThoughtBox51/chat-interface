@@ -112,23 +112,29 @@ async def update_user_role(
         ':updated_at': datetime.utcnow().isoformat()
     }
     
+    # Always update custom_role (set to null if not provided)
     if custom_role_id:
         update_expr += ', custom_role = :custom_role'
         expr_values[':custom_role'] = custom_role_id
+    else:
+        # Remove custom_role attribute if setting to admin
+        update_expr += ' REMOVE custom_role'
     
     try:
-        table.update_item(
+        response = table.update_item(
             Key={'id': user_id},
             UpdateExpression=update_expr,
             ExpressionAttributeNames=expr_names,
-            ExpressionAttributeValues=expr_values
+            ExpressionAttributeValues=expr_values,
+            ReturnValues='ALL_NEW'
         )
         
-        return {"message": "User role updated successfully"}
+        return {"message": "User role updated successfully", "user": response.get('Attributes')}
     except Exception as e:
+        print(f"Error updating user role: {e}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            detail=f"User not found or update failed: {str(e)}"
         )
 
 @router.delete("/{user_id}/")
@@ -148,3 +154,76 @@ async def delete_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
+
+
+@router.post("/{user_id}/tokens/")
+async def track_token_usage(
+    user_id: str,
+    token_data: dict,
+    current_admin: User = Depends(get_current_admin)
+):
+    """Track token usage for a user"""
+    db = get_dynamodb()
+    users_table = db.get_table(settings.USERS_TABLE)
+    
+    tokens_used = token_data.get('tokens_used', 0)
+    
+    if tokens_used <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid token count"
+        )
+    
+    # Get user to check role limits
+    user_response = users_table.get_item(Key={'id': user_id})
+    
+    if 'Item' not in user_response:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    user = decimal_to_float(user_response['Item'])
+    current_tokens = user.get('tokens_used_this_month', 0)
+    
+    # Check if we need to reset monthly counter
+    from datetime import datetime
+    reset_date = user.get('token_usage_reset_date')
+    now = datetime.utcnow()
+    
+    if not reset_date or datetime.fromisoformat(reset_date).month != now.month:
+        # Reset counter for new month
+        current_tokens = 0
+        reset_date = now.isoformat()
+    
+    new_token_count = current_tokens + tokens_used
+    
+    # Check role limits if user has custom role
+    if user.get('custom_role'):
+        roles_table = db.get_table(settings.ROLES_TABLE)
+        role_response = roles_table.get_item(Key={'id': user['custom_role']})
+        
+        if 'Item' in role_response:
+            role = decimal_to_float(role_response['Item'])
+            max_tokens = role.get('max_tokens_per_month')
+            
+            if max_tokens is not None and new_token_count > max_tokens:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Monthly token limit exceeded. Limit: {max_tokens}, Used: {new_token_count}"
+                )
+    
+    # Update user token usage
+    users_table.update_item(
+        Key={'id': user_id},
+        UpdateExpression='SET tokens_used_this_month = :tokens, token_usage_reset_date = :reset_date',
+        ExpressionAttributeValues={
+            ':tokens': new_token_count,
+            ':reset_date': reset_date
+        }
+    )
+    
+    return {
+        "message": "Token usage tracked successfully",
+        "tokens_used_this_month": new_token_count
+    }

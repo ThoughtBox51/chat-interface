@@ -131,30 +131,39 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 @router.put("/profile", response_model=User)
 async def update_profile(
-    name: str = None,
-    bio: str = None,
+    profile_data: dict,
     current_user: User = Depends(get_current_user)
 ):
-    """Update user profile"""
+    """Update user profile (name and bio only, email cannot be changed)"""
     table = get_dynamodb_table(settings.USERS_TABLE)
+    
+    name = profile_data.get('name')
+    bio = profile_data.get('bio')
+    
+    if not name and bio is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update"
+        )
     
     update_expr = "SET updated_at = :updated_at"
     expr_values = {':updated_at': datetime.utcnow().isoformat()}
+    expr_names = {}
     
     if name:
         update_expr += ", #n = :name"
         expr_values[':name'] = name
+        expr_names['#n'] = 'name'
+        
     if bio is not None:
         update_expr += ", bio = :bio"
         expr_values[':bio'] = bio
-    
-    expr_names = {'#n': 'name'} if name else None
     
     table.update_item(
         Key={'id': current_user.id},
         UpdateExpression=update_expr,
         ExpressionAttributeValues=expr_values,
-        ExpressionAttributeNames=expr_names
+        ExpressionAttributeNames=expr_names if expr_names else None
     )
     
     # Get updated user
