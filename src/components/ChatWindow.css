@@ -22,9 +22,30 @@
   color: #ececf1;
 }
 
+.empty-state-logo {
+  width: 180px;
+  height: 180px;
+  object-fit: contain;
+  margin-bottom: 32px;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
 .empty-state h1 {
   font-size: 32px;
   margin-bottom: 12px;
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .empty-state p {

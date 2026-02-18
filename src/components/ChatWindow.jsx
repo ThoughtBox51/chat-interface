@@ -248,8 +248,9 @@ function ChatWindow({ chat, onSendMessage, models = [], sending, currentUser, me
           </div>
         ) : chat?.messages.length === 0 ? (
           <div className="empty-state">
-            <h1>Chat App</h1>
-            <p>Start a conversation</p>
+            <img src="/logo.png" alt="ChatGenie" className="empty-state-logo" />
+            <h1>Welcome to ChatGenie</h1>
+            <p>Start a conversation with AI</p>
           </div>
         ) : (
           <>

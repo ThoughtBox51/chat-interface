@@ -95,8 +95,8 @@ function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, use
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <div className="logo-placeholder">
-          <span>Logo</span>
+        <div className="logo-container">
+          <img src="/logo.png" alt="ChatGenie" className="app-logo" />
         </div>
       </div>
 
