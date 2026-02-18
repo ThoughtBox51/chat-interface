@@ -5,7 +5,7 @@ import { countChatTokens, formatTokenCount, calculatePercentage } from '../utils
 import EmojiPicker from './EmojiPicker'
 import ModelMention from './ModelMention'
 
-function ChatWindow({ chat, onSendMessage, models = [], sending, currentUser }) {
+function ChatWindow({ chat, onSendMessage, models = [], sending, currentUser, messagesLoading }) {
   const [input, setInput] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const [limits, setLimits] = useState(null)
@@ -239,7 +239,14 @@ function ChatWindow({ chat, onSendMessage, models = [], sending, currentUser }) 
       </div>
 
       <div className="messages">
-        {chat?.messages.length === 0 ? (
+        {messagesLoading ? (
+          <div className="empty-state">
+            <div className="loading-spinner-container">
+              <div className="spinner-large"></div>
+              <p>Loading messages...</p>
+            </div>
+          </div>
+        ) : chat?.messages.length === 0 ? (
           <div className="empty-state">
             <h1>Chat App</h1>
             <p>Start a conversation</p>

@@ -159,3 +159,62 @@ async def get_current_user_limits(current_user: User = Depends(get_current_user)
         "context_length": role.get('context_length'),  # Can be None for unlimited
         "tokens_used_this_month": getattr(current_user, 'tokens_used_this_month', 0)
     }
+
+
+@router.get("/current/permissions")
+async def get_current_user_permissions(current_user: User = Depends(get_current_user)):
+    """Get permissions for the current user"""
+    # Admins have all permissions
+    if current_user.role == 'admin':
+        return {
+            "user_chat": True,
+            "chat": True,
+            "history": True,
+            "export": True,
+            "share": True,
+            "settings": True,
+            "profile": True
+        }
+    
+    # Users without custom_role have default permissions
+    if not current_user.custom_role:
+        return {
+            "user_chat": False,
+            "chat": True,
+            "history": True,
+            "export": False,
+            "share": False,
+            "settings": True,
+            "profile": True
+        }
+    
+    db = get_dynamodb()
+    roles_table = db.get_table(settings.ROLES_TABLE)
+    
+    role_response = roles_table.get_item(Key={'id': current_user.custom_role})
+    
+    if 'Item' not in role_response:
+        # If custom_role is set but role not found, return defaults
+        return {
+            "user_chat": False,
+            "chat": True,
+            "history": True,
+            "export": False,
+            "share": False,
+            "settings": True,
+            "profile": True
+        }
+    
+    role = decimal_to_float(role_response['Item'])
+    permissions = role.get('permissions', {})
+    features = permissions.get('features', {})
+    
+    return {
+        "user_chat": features.get('user_chat', False),
+        "chat": features.get('chat', True),
+        "history": features.get('history', True),
+        "export": features.get('export', False),
+        "share": features.get('share', False),
+        "settings": features.get('settings', True),
+        "profile": features.get('profile', True)
+    }

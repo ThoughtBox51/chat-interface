@@ -14,6 +14,7 @@ class FeaturePermissions(BaseModel):
     share: bool = False
     settings: bool = False
     profile: bool = False
+    user_chat: bool = False  # Permission to chat with other users
 
 class AdminPermissions(BaseModel):
     manage_users: bool = False

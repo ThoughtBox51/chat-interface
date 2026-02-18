@@ -24,5 +24,10 @@ export const roleService = {
   async getCurrentUserLimits() {
     const response = await api.get('/roles/current/limits')
     return response.data
+  },
+
+  async getCurrentUserPermissions() {
+    const response = await api.get('/roles/current/permissions')
+    return response.data
   }
 }

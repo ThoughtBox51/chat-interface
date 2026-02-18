@@ -22,7 +22,9 @@ function App() {
   const [activeChat, setActiveChat] = useState(null)
   const [loading, setLoading] = useState(true)
   const [chatsLoading, setChatsLoading] = useState(false)
+  const [messagesLoading, setMessagesLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [permissions, setPermissions] = useState(null)
   
   // Admin data
   const [models, setModels] = useState([])
@@ -36,7 +38,53 @@ function App() {
     console.log('Initial user:', initUser ? initUser.email : 'none')
     if (initUser) {
       setUser(initUser)
-      loadUserData()
+      
+      // Try to load from cache first for instant display
+      const cachedChats = sessionStorage.getItem('cachedChats')
+      const cachedModels = sessionStorage.getItem('cachedModels')
+      const cachedPermissions = sessionStorage.getItem('cachedPermissions')
+      const cachedActiveChat = sessionStorage.getItem('cachedActiveChat')
+      
+      if (cachedChats && cachedModels && cachedPermissions) {
+        console.log('Loading from cache...')
+        try {
+          const parsedChats = JSON.parse(cachedChats)
+          setChats(parsedChats)
+          setModels(JSON.parse(cachedModels))
+          setPermissions(JSON.parse(cachedPermissions))
+          
+          // Restore active chat
+          if (cachedActiveChat && parsedChats.length > 0) {
+            const cachedChat = parsedChats.find(c => (c.id || c._id) === cachedActiveChat)
+            setActiveChat(cachedActiveChat)
+            
+            // Only load messages if not already in cache
+            if (cachedChat && (!cachedChat.messages || cachedChat.messages.length === 0)) {
+              loadChatMessages(cachedActiveChat)
+            }
+          } else if (parsedChats.length > 0) {
+            const firstChatId = parsedChats[0].id || parsedChats[0]._id
+            const firstChat = parsedChats[0]
+            setActiveChat(firstChatId)
+            
+            // Only load messages if not already in cache
+            if (!firstChat.messages || firstChat.messages.length === 0) {
+              loadChatMessages(firstChatId)
+            }
+          }
+          
+          setLoading(false)
+          setChatsLoading(false)
+          
+          // Load fresh data in background
+          loadUserData(true) // true = background refresh
+        } catch (error) {
+          console.error('Error loading from cache:', error)
+          loadUserData()
+        }
+      } else {
+        loadUserData()
+      }
     } else {
       setLoading(false)
     }
@@ -51,13 +99,22 @@ function App() {
     return () => clearTimeout(safetyTimeout)
   }, [])
 
-  // Polling for new messages in active chat only (not for new chat sessions)
+  // Polling for new messages in active chat only (only for direct user chats)
   useEffect(() => {
     if (!user || !activeChat) return
 
+    // Check if active chat is a direct user chat
+    const currentChat = chats.find(c => (c.id || c._id) === activeChat)
+    const isDirectChat = currentChat?.chat_type === 'direct'
+    
+    // Only poll for direct user chats, not AI chats
+    if (!isDirectChat) return
+
+    console.log('Starting polling for direct chat:', activeChat)
+
     const pollInterval = setInterval(async () => {
       try {
-        // Only reload messages for the active chat
+        // Only reload messages for the active direct chat
         const chatData = await chatService.getChat(activeChat)
         
         setChats(prevChats => {
@@ -65,6 +122,7 @@ function App() {
           
           // Check if messages have changed
           if (currentChat && chatData.messages?.length !== currentChat.messages?.length) {
+            console.log('New messages detected in direct chat, updating...')
             // Update only the active chat with new messages
             return prevChats.map(c => 
               (c.id || c._id) === activeChat ? chatData : c
@@ -78,30 +136,66 @@ function App() {
       }
     }, 5000) // Poll every 5 seconds
 
-    return () => clearInterval(pollInterval)
-  }, [user, activeChat])
+    return () => {
+      console.log('Stopping polling for chat:', activeChat)
+      clearInterval(pollInterval)
+    }
+  }, [user, activeChat, chats])
 
-  const loadUserData = async () => {
-    setChatsLoading(true)
+  // Cache active chat whenever it changes
+  useEffect(() => {
+    if (activeChat) {
+      sessionStorage.setItem('cachedActiveChat', activeChat)
+    }
+  }, [activeChat])
+
+  // Cache chats whenever they change
+  useEffect(() => {
+    if (chats.length > 0) {
+      try {
+        sessionStorage.setItem('cachedChats', JSON.stringify(chats))
+      } catch (error) {
+        console.error('Error caching chats:', error)
+      }
+    }
+  }, [chats])
+
+  const loadUserData = async (isBackgroundRefresh = false) => {
+    if (!isBackgroundRefresh) {
+      setChatsLoading(true)
+    }
+    
     try {
-      console.log('Starting to load user data...')
+      console.log(isBackgroundRefresh ? 'Background refresh...' : 'Starting to load user data...')
       const startTime = Date.now()
       
       // Load chats without messages for faster initial load
-      const [chatsData, modelsData] = await Promise.all([
+      const [chatsData, modelsData, permissionsData] = await Promise.all([
         chatService.getChats(false), // false = don't include messages
-        modelService.getModels()
+        modelService.getModels(),
+        roleService.getCurrentUserPermissions()
       ])
       
       const duration = Date.now() - startTime
       console.log(`Data loaded in ${duration}ms`)
       console.log('Loaded chats:', chatsData.length)
       console.log('Loaded models:', modelsData.length)
+      console.log('Loaded permissions:', permissionsData)
+      
+      // Cache data in sessionStorage for instant loading on return
+      try {
+        sessionStorage.setItem('cachedChats', JSON.stringify(chatsData))
+        sessionStorage.setItem('cachedModels', JSON.stringify(modelsData))
+        sessionStorage.setItem('cachedPermissions', JSON.stringify(permissionsData))
+      } catch (error) {
+        console.error('Error caching data:', error)
+      }
       
       setChats(chatsData)
       setModels(modelsData)
+      setPermissions(permissionsData)
       
-      if (chatsData.length > 0) {
+      if (!isBackgroundRefresh && chatsData.length > 0) {
         const firstChatId = chatsData[0].id || chatsData[0]._id
         setActiveChat(firstChatId)
         // Load messages for first chat in background
@@ -113,19 +207,35 @@ function App() {
       console.error('Error loading data:', error)
       console.error('Error details:', error.response?.data || error.message)
       
-      // Try to load anyway with empty data
-      setChats([])
-      setModels([])
-      
-      // Show user-friendly error
-      alert(`Failed to load chats: ${error.message}. Please check the console and backend logs.`)
+      if (!isBackgroundRefresh) {
+        // Try to load anyway with empty data
+        setChats([])
+        setModels([])
+        setPermissions(null)
+        
+        // Show user-friendly error
+        alert(`Failed to load chats: ${error.message}. Please check the console and backend logs.`)
+      }
     } finally {
-      setLoading(false)
-      setChatsLoading(false)
+      if (!isBackgroundRefresh) {
+        setLoading(false)
+        setChatsLoading(false)
+      }
+    }
+  }
+
+  const refreshChats = async () => {
+    // Lightweight refresh without showing full page loading
+    try {
+      const chatsData = await chatService.getChats(false)
+      setChats(chatsData)
+    } catch (error) {
+      console.error('Error refreshing chats:', error)
     }
   }
 
   const loadChatMessages = async (chatId) => {
+    setMessagesLoading(true)
     try {
       const chatData = await chatService.getChat(chatId)
       setChats(prev => prev.map(c => 
@@ -133,11 +243,14 @@ function App() {
       ))
     } catch (error) {
       console.error('Error loading chat messages:', error)
+    } finally {
+      setMessagesLoading(false)
     }
   }
 
   const handleSelectChat = (chatId) => {
     setActiveChat(chatId)
+    
     // Load messages if not already loaded
     const chat = chats.find(c => (c.id || c._id) === chatId)
     if (chat && (!chat.messages || chat.messages.length === 0)) {
@@ -344,6 +457,7 @@ function App() {
   }
 
   if (loading) {
+    console.log('Showing full page loading skeleton')
     return (
       <div className="app">
         <SidebarSkeleton />
@@ -403,11 +517,11 @@ function App() {
   }
 
   const createNewChat = () => {
-    // Check if there's already a new chat (one with no messages)
-    const existingNewChat = chats.find(chat => !chat.messages || chat.messages.length === 0)
+    // Check if there's already a temporary new chat (not saved to backend yet)
+    const existingNewChat = chats.find(chat => chat.isTemp === true)
     
     if (existingNewChat) {
-      // If there's already an empty chat, just select it
+      // If there's already a temp chat, just select it
       setActiveChat(existingNewChat.id || existingNewChat._id)
       return
     }
@@ -467,8 +581,8 @@ function App() {
       await chatService.updateChat(id, { title: newTitle })
     } catch (error) {
       console.error('Error renaming chat:', error)
-      // Optionally: revert the change if API fails
-      loadUserData()
+      // Revert by refreshing chats
+      refreshChats()
     }
   }
 
@@ -498,8 +612,8 @@ function App() {
       await chatService.updateChat(id, { pinned: newPinnedStatus })
     } catch (error) {
       console.error('Error pinning chat:', error)
-      // Optionally: revert the change if API fails
-      loadUserData()
+      // Revert by refreshing chats
+      refreshChats()
     }
   }
 
@@ -796,6 +910,7 @@ function App() {
         onOpenAdmin={() => setShowAdmin(true)}
         onOpenUserSearch={() => setShowUserSearch(true)}
         loading={chatsLoading}
+        permissions={permissions}
       />
       <ChatWindow 
         chat={currentChat}
@@ -803,6 +918,7 @@ function App() {
         models={models}
         sending={sending}
         currentUser={user}
+        messagesLoading={messagesLoading}
       />
       {showProfile && (
         <Profile 

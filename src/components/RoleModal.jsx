@@ -18,7 +18,8 @@ function RoleModal({ onClose, onSave, editRole, models }) {
           export: false,
           share: false,
           settings: false,
-          profile: false
+          profile: false,
+          user_chat: false
         },
         admin: {
           manageUsers: false,
@@ -336,6 +337,18 @@ function RoleModal({ onClose, onSave, editRole, models }) {
                 <div>
                   <strong>Profile</strong>
                   <span>Edit profile information</span>
+                </div>
+              </label>
+
+              <label className="permission-item">
+                <input
+                  type="checkbox"
+                  checked={roleData.permissions.features.user_chat}
+                  onChange={() => toggleFeaturePermission('user_chat')}
+                />
+                <div>
+                  <strong>User Chat</strong>
+                  <span>Chat with other users</span>
                 </div>
               </label>
             </div>

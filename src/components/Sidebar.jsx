@@ -4,7 +4,7 @@ import './LoadingSkeleton.css'
 import { roleService } from '../services/role.service'
 import { formatTokenCount, calculatePercentage } from '../utils/tokenCounter'
 
-function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, user, onLogout, onOpenProfile, onRenameChat, onPinChat, onOpenAdmin, onOpenUserSearch, loading }) {
+function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, user, onLogout, onOpenProfile, onRenameChat, onPinChat, onOpenAdmin, onOpenUserSearch, loading, permissions }) {
   const [showMenu, setShowMenu] = useState(false)
   const [showChatMenu, setShowChatMenu] = useState(null)
   const [renameId, setRenameId] = useState(null)
@@ -104,9 +104,11 @@ function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, use
         + New Chat
       </button>
 
-      <button className="new-chat-btn search-user-btn" onClick={onOpenUserSearch}>
-        👤 Chat with User
-      </button>
+      {permissions?.user_chat && (
+        <button className="new-chat-btn search-user-btn" onClick={onOpenUserSearch}>
+          👤 Chat with User
+        </button>
+      )}
       
       <div className="chat-list">
         {loading ? (

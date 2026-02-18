@@ -371,6 +371,26 @@ def create_direct_chat(
     db = get_dynamodb()
     chats_table = db.get_table(settings.CHATS_TABLE)
     users_table = db.get_table(settings.USERS_TABLE)
+    roles_table = db.get_table(settings.ROLES_TABLE)
+    
+    # Check if user has permission to chat with other users
+    if current_user.role != 'admin' and current_user.custom_role:
+        role_response = roles_table.get_item(Key={'id': current_user.custom_role})
+        if 'Item' in role_response:
+            role = decimal_to_float(role_response['Item'])
+            permissions = role.get('permissions', {})
+            features = permissions.get('features', {})
+            if not features.get('user_chat', False):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have permission to chat with other users"
+                )
+    elif current_user.role != 'admin' and not current_user.custom_role:
+        # Users without custom_role don't have user_chat permission by default
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to chat with other users"
+        )
     
     # Verify participant exists
     participant_response = users_table.get_item(Key={'id': participant_id})
