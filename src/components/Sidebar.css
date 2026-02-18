@@ -40,6 +40,15 @@
   background: #2a2b32;
 }
 
+.search-user-btn {
+  background: #10a37f;
+  border: 1px solid #10a37f;
+}
+
+.search-user-btn:hover {
+  background: #0d8c6d;
+}
+
 .chat-list {
   flex: 1;
   overflow-y: auto;
@@ -77,11 +86,22 @@
   flex-shrink: 0;
 }
 
+.direct-chat-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
 .chat-title {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.direct-chat-title {
+  font-weight: 500;
+  color: #10a37f;
 }
 
 .chat-actions {

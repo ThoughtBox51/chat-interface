@@ -6,7 +6,7 @@ import uuid
 from app.core.database import get_dynamodb
 from app.core.config import settings
 from app.models.user import User
-from app.api.deps import get_current_admin, decimal_to_float
+from app.api.deps import get_current_admin, get_current_user, decimal_to_float
 
 router = APIRouter()
 
@@ -227,3 +227,44 @@ async def track_token_usage(
         "message": "Token usage tracked successfully",
         "tokens_used_this_month": new_token_count
     }
+
+
+@router.get("/search/", response_model=List[User])
+async def search_users(
+    query: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Search users by name or email"""
+    if not query or len(query) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Search query must be at least 2 characters"
+        )
+    
+    db = get_dynamodb()
+    table = db.get_table(settings.USERS_TABLE)
+    
+    # Query active users using status-index
+    response = table.query(
+        IndexName='status-index',
+        KeyConditionExpression='#status = :status',
+        ExpressionAttributeNames={'#status': 'status'},
+        ExpressionAttributeValues={':status': 'active'}
+    )
+    
+    users = [decimal_to_float(item) for item in response.get('Items', [])]
+    
+    # Filter by search query (case-insensitive)
+    query_lower = query.lower()
+    filtered_users = [
+        user for user in users
+        if (query_lower in user.get('name', '').lower() or 
+            query_lower in user.get('email', '').lower()) and
+            user.get('id') != current_user.id  # Exclude current user
+    ]
+    
+    # Remove sensitive data
+    for user in filtered_users:
+        user.pop('hashed_password', None)
+    
+    return filtered_users[:10]  # Limit to 10 results

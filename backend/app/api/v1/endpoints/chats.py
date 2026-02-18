@@ -12,22 +12,40 @@ from app.api.deps import get_current_user, decimal_to_float
 router = APIRouter()
 
 @router.get("/", response_model=List[Chat])
-async def get_chats(current_user: User = Depends(get_current_user)):
+async def get_chats(current_user: User = Depends(get_current_user), include_messages: bool = True):
     """Get all user chats (optimized with GSI query)"""
     db = get_dynamodb()
     table = db.get_table(settings.CHATS_TABLE)
     
     # Use GSI query instead of scan for much better performance
     # This queries the user-id-index and automatically sorts by updated_at (newest first)
-    response = table.query(
-        IndexName='user-id-index',
-        KeyConditionExpression='user_id = :user_id',
-        ExpressionAttributeValues={':user_id': current_user.id},
-        ScanIndexForward=False,  # Sort descending (newest first)
-        Limit=50  # Limit to 50 most recent chats for faster initial load
-    )
+    
+    if include_messages:
+        # Full chats with messages
+        response = table.query(
+            IndexName='user-id-index',
+            KeyConditionExpression='user_id = :user_id',
+            ExpressionAttributeValues={':user_id': current_user.id},
+            ScanIndexForward=False,  # Sort descending (newest first)
+            Limit=50  # Limit to 50 most recent chats for faster initial load
+        )
+    else:
+        # Lightweight: exclude messages for faster initial load
+        response = table.query(
+            IndexName='user-id-index',
+            KeyConditionExpression='user_id = :user_id',
+            ExpressionAttributeValues={':user_id': current_user.id},
+            ScanIndexForward=False,
+            Limit=50,
+            ProjectionExpression='id, user_id, title, chat_type, participant_id, conversation_id, pinned, created_at, updated_at'
+        )
     
     chats = [decimal_to_float(item) for item in response.get('Items', [])]
+    
+    # Add empty messages array if not included
+    if not include_messages:
+        for chat in chats:
+            chat['messages'] = []
     
     # Sort by pinned status (pinned chats first), then by updated_at
     chats.sort(key=lambda x: (not x.get('pinned', False), x.get('updated_at', '')), reverse=True)
@@ -137,6 +155,33 @@ def update_chat(
     
     return Chat(**updated_chat)
 
+@router.get("/{chat_id}/", response_model=Chat)
+async def get_chat(
+    chat_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get a single chat with all messages"""
+    db = get_dynamodb()
+    table = db.get_table(settings.CHATS_TABLE)
+    
+    response = table.get_item(Key={'id': chat_id})
+    
+    if 'Item' not in response:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat not found"
+        )
+    
+    chat = decimal_to_float(response['Item'])
+    
+    if chat.get('user_id') != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this chat"
+        )
+    
+    return Chat(**chat)
+
 @router.delete("/{chat_id}/")
 def delete_chat(
     chat_id: str,
@@ -216,10 +261,13 @@ def send_message(
     
     message_dict = message.model_dump()
     message_dict['timestamp'] = datetime.utcnow().isoformat()
+    message_dict['sender_id'] = current_user.id  # Add sender ID
     
     # Get current messages and append new one
     messages = chat.get('messages', [])
     messages.append(message_dict)
+    
+    timestamp = datetime.utcnow().isoformat()
     
     # Update chat with new message
     response = chats_table.update_item(
@@ -227,12 +275,41 @@ def send_message(
         UpdateExpression='SET messages = :messages, updated_at = :updated_at',
         ExpressionAttributeValues={
             ':messages': messages,
-            ':updated_at': datetime.utcnow().isoformat()
+            ':updated_at': timestamp
         },
         ReturnValues='ALL_NEW'
     )
     
     updated_chat = decimal_to_float(response['Attributes'])
+    
+    # If this is a direct chat, sync the message to the other user's chat
+    if chat.get('chat_type') == 'direct' and chat.get('conversation_id'):
+        conversation_id = chat.get('conversation_id')
+        participant_id = chat.get('participant_id')
+        
+        # Find the other user's chat entry
+        participant_response = chats_table.query(
+            IndexName='user-id-index',
+            KeyConditionExpression='user_id = :user_id',
+            ExpressionAttributeValues={':user_id': participant_id}
+        )
+        
+        participant_chats = [decimal_to_float(item) for item in participant_response.get('Items', [])]
+        for p_chat in participant_chats:
+            if p_chat.get('conversation_id') == conversation_id:
+                # Update the participant's chat with the same message
+                p_messages = p_chat.get('messages', [])
+                p_messages.append(message_dict)
+                
+                chats_table.update_item(
+                    Key={'id': p_chat['id']},
+                    UpdateExpression='SET messages = :messages, updated_at = :updated_at',
+                    ExpressionAttributeValues={
+                        ':messages': p_messages,
+                        ':updated_at': timestamp
+                    }
+                )
+                break
     
     return Chat(**updated_chat)
 
@@ -277,3 +354,84 @@ async def get_chats_paginated(
         result['last_key'] = json.dumps(response['LastEvaluatedKey'])
     
     return result
+
+
+@router.post("/direct/", response_model=Chat, status_code=status.HTTP_201_CREATED)
+def create_direct_chat(
+    participant_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Create or get existing direct message chat with another user (creates for both users)"""
+    if participant_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot create direct chat with yourself"
+        )
+    
+    db = get_dynamodb()
+    chats_table = db.get_table(settings.CHATS_TABLE)
+    users_table = db.get_table(settings.USERS_TABLE)
+    
+    # Verify participant exists
+    participant_response = users_table.get_item(Key={'id': participant_id})
+    if 'Item' not in participant_response:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    participant = decimal_to_float(participant_response['Item'])
+    
+    # Check if direct chat already exists for current user
+    response = chats_table.query(
+        IndexName='user-id-index',
+        KeyConditionExpression='user_id = :user_id',
+        ExpressionAttributeValues={':user_id': current_user.id}
+    )
+    
+    existing_chats = [decimal_to_float(item) for item in response.get('Items', [])]
+    for chat in existing_chats:
+        if chat.get('chat_type') == 'direct' and chat.get('participant_id') == participant_id:
+            return Chat(**chat)
+    
+    # Generate a shared conversation ID for linking both chat entries
+    conversation_id = str(uuid.uuid4())
+    timestamp = datetime.utcnow().isoformat()
+    
+    # Create chat entry for current user
+    current_user_chat = {
+        'id': str(uuid.uuid4()),
+        'user_id': current_user.id,
+        'title': f"Chat with {participant.get('name', 'User')}",
+        'chat_type': 'direct',
+        'participant_id': participant_id,
+        'conversation_id': conversation_id,  # Link both chats
+        'messages': [],
+        'pinned': False,
+        'shared': False,
+        'shared_with': [],
+        'created_at': timestamp,
+        'updated_at': timestamp
+    }
+    
+    # Create chat entry for participant
+    participant_chat = {
+        'id': str(uuid.uuid4()),
+        'user_id': participant_id,
+        'title': f"Chat with {current_user.name}",
+        'chat_type': 'direct',
+        'participant_id': current_user.id,
+        'conversation_id': conversation_id,  # Same conversation ID
+        'messages': [],
+        'pinned': False,
+        'shared': False,
+        'shared_with': [],
+        'created_at': timestamp,
+        'updated_at': timestamp
+    }
+    
+    # Save both chat entries
+    chats_table.put_item(Item=current_user_chat)
+    chats_table.put_item(Item=participant_chat)
+    
+    return Chat(**current_user_chat)

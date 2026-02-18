@@ -4,7 +4,7 @@ import './LoadingSkeleton.css'
 import { roleService } from '../services/role.service'
 import { formatTokenCount, calculatePercentage } from '../utils/tokenCounter'
 
-function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, user, onLogout, onOpenProfile, onRenameChat, onPinChat, onOpenAdmin, loading }) {
+function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, user, onLogout, onOpenProfile, onRenameChat, onPinChat, onOpenAdmin, onOpenUserSearch, loading }) {
   const [showMenu, setShowMenu] = useState(false)
   const [showChatMenu, setShowChatMenu] = useState(null)
   const [renameId, setRenameId] = useState(null)
@@ -103,6 +103,10 @@ function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, use
       <button className="new-chat-btn" onClick={onNewChat}>
         + New Chat
       </button>
+
+      <button className="new-chat-btn search-user-btn" onClick={onOpenUserSearch}>
+        👤 Chat with User
+      </button>
       
       <div className="chat-list">
         {loading ? (
@@ -120,6 +124,7 @@ function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, use
         ) : (
           chats.map(chat => {
             const chatId = chat.id || chat._id
+            const isDirectChat = chat.chat_type === 'direct'
             return (
               <div 
                 key={chatId}
@@ -127,6 +132,7 @@ function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, use
                 onClick={() => onSelectChat(chatId)}
               >
                 {chat.pinned && <span className="pin-icon">📌</span>}
+                {isDirectChat && <span className="direct-chat-icon">👤</span>}
                 {renameId === chatId ? (
                   <input
                     type="text"
@@ -139,7 +145,9 @@ function Sidebar({ chats, activeChat, onSelectChat, onNewChat, onDeleteChat, use
                     onClick={(e) => e.stopPropagation()}
                   />
                 ) : (
-                  <span className="chat-title">{chat.title}</span>
+                  <span className={`chat-title ${isDirectChat ? 'direct-chat-title' : ''}`}>
+                    {chat.title}
+                  </span>
                 )}
                 <div className="chat-actions">
                   <button 

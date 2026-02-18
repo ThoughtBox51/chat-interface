@@ -24,5 +24,10 @@ export const userService = {
   async deleteUser(id) {
     const response = await api.delete(`/users/${id}/`)
     return response.data
+  },
+
+  async searchUsers(query) {
+    const response = await api.get(`/users/search/?query=${encodeURIComponent(query)}`)
+    return response.data
   }
 }

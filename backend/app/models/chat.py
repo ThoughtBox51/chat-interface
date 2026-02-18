@@ -6,11 +6,15 @@ class Message(BaseModel):
     role: str
     content: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    sender_id: Optional[str] = None  # ID of user who sent the message
 
 class ChatBase(BaseModel):
     title: str = "New Chat"
     model_id: Optional[str] = None
     pinned: bool = False
+    chat_type: str = "ai"  # "ai" or "direct"
+    participant_id: Optional[str] = None  # For direct messages
+    conversation_id: Optional[str] = None  # Links both sides of direct chat
 
 class ChatCreate(ChatBase):
     messages: List[Message] = []

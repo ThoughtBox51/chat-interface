@@ -2,13 +2,19 @@ import { useState, useRef, useEffect } from 'react'
 import './ChatWindow.css'
 import { roleService } from '../services/role.service'
 import { countChatTokens, formatTokenCount, calculatePercentage } from '../utils/tokenCounter'
+import EmojiPicker from './EmojiPicker'
+import ModelMention from './ModelMention'
 
-function ChatWindow({ chat, onSendMessage, models = [], sending }) {
+function ChatWindow({ chat, onSendMessage, models = [], sending, currentUser }) {
   const [input, setInput] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const [limits, setLimits] = useState(null)
   const [currentTokens, setCurrentTokens] = useState(0)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [showModelMention, setShowModelMention] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
   const messagesEndRef = useRef(null)
+  const inputRef = useRef(null)
 
   useEffect(() => {
     const fetchLimits = async () => {
@@ -112,6 +118,43 @@ function ChatWindow({ chat, onSendMessage, models = [], sending }) {
     return formatted
   }
 
+  const handleInputChange = (e) => {
+    const value = e.target.value
+    setInput(value)
+
+    // Check for @ mention in direct chats
+    if (chat?.chat_type === 'direct') {
+      const lastAtIndex = value.lastIndexOf('@')
+      if (lastAtIndex !== -1) {
+        const textAfterAt = value.substring(lastAtIndex + 1)
+        // Show model list if @ is at start or after space, and no space after @
+        const charBeforeAt = lastAtIndex > 0 ? value[lastAtIndex - 1] : ' '
+        if ((charBeforeAt === ' ' || lastAtIndex === 0) && !textAfterAt.includes(' ')) {
+          setMentionQuery(textAfterAt.toLowerCase())
+          setShowModelMention(true)
+          return
+        }
+      }
+    }
+    
+    setShowModelMention(false)
+  }
+
+  const handleModelSelect = (model) => {
+    // Replace @query with @modelname
+    const lastAtIndex = input.lastIndexOf('@')
+    const beforeAt = input.substring(0, lastAtIndex)
+    const afterQuery = input.substring(lastAtIndex + 1).replace(/^\S*/, '')
+    
+    setInput(`${beforeAt}@${model.display_name || model.name}${afterQuery}`)
+    setShowModelMention(false)
+    
+    // Focus back on input
+    if (inputRef.current) {
+      inputRef.current.focus()
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (input.trim() && !sending && selectedModel) {
@@ -141,22 +184,29 @@ function ChatWindow({ chat, onSendMessage, models = [], sending }) {
   return (
     <div className="chat-window">
       <div className="chat-header">
-        <select 
-          className="model-selector"
-          value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value)}
-          disabled={models.length === 0}
-        >
-          {models.length === 0 ? (
-            <option value="">No models available</option>
-          ) : (
-            models.map(model => (
-              <option key={model.id || model._id} value={model.id || model._id}>
-                {model.display_name || model.name}
-              </option>
-            ))
-          )}
-        </select>
+        {chat?.chat_type === 'direct' ? (
+          <div className="direct-chat-indicator">
+            <span className="direct-icon">👤</span>
+            <span className="direct-label">{chat.title}</span>
+          </div>
+        ) : (
+          <select 
+            className="model-selector"
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            disabled={models.length === 0}
+          >
+            {models.length === 0 ? (
+              <option value="">No models available</option>
+            ) : (
+              models.map(model => (
+                <option key={model.id || model._id} value={model.id || model._id}>
+                  {model.display_name || model.name}
+                </option>
+              ))
+            )}
+          </select>
+        )}
         
         {(() => {
           const shouldShow = limits && limits.context_length !== null && limits.context_length !== undefined && chat?.messages?.length > 0
@@ -196,14 +246,26 @@ function ChatWindow({ chat, onSendMessage, models = [], sending }) {
           </div>
         ) : (
           <>
-            {chat?.messages.map((msg, idx) => (
-              <div key={idx} className={`message ${msg.role}`}>
-                <div 
-                  className="message-content"
-                  dangerouslySetInnerHTML={{ __html: formatMessage(msg.content) }}
-                />
-              </div>
-            ))}
+            {chat?.messages.map((msg, idx) => {
+              // For direct chats, determine if message is from current user
+              const isDirectChat = chat?.chat_type === 'direct'
+              let messageClass = msg.role // Default: 'user' or 'assistant'
+              
+              if (isDirectChat && currentUser) {
+                // Check if the message was sent by the current user
+                const isSentByMe = msg.sender_id === currentUser.id
+                messageClass = isSentByMe ? 'sent' : 'received'
+              }
+              
+              return (
+                <div key={idx} className={`message ${messageClass}`}>
+                  <div 
+                    className="message-content"
+                    dangerouslySetInnerHTML={{ __html: formatMessage(msg.content) }}
+                  />
+                </div>
+              )
+            })}
             {sending && (
               <div className="message assistant typing">
                 <div className="typing-indicator">
@@ -225,10 +287,22 @@ function ChatWindow({ chat, onSendMessage, models = [], sending }) {
           </div>
         )}
         <div className="input-form-controls">
+          {chat?.chat_type === 'direct' && (
+            <button
+              type="button"
+              className="emoji-trigger-btn"
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              disabled={sending || isContextLimitReached}
+              title="Add emoji"
+            >
+              😊
+            </button>
+          )}
           <input
             type="text"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
+            ref={inputRef}
             placeholder={isContextLimitReached ? "Context limit reached - start new chat" : "Send a message..."}
             className="message-input"
             disabled={sending || isContextLimitReached}
@@ -243,6 +317,25 @@ function ChatWindow({ chat, onSendMessage, models = [], sending }) {
           </button>
         </div>
       </form>
+
+      {showEmojiPicker && (
+        <EmojiPicker
+          onEmojiSelect={(emoji) => {
+            setInput(prev => prev + emoji)
+            setShowEmojiPicker(false)
+          }}
+          onClose={() => setShowEmojiPicker(false)}
+        />
+      )}
+
+      {showModelMention && chat?.chat_type === 'direct' && (
+        <ModelMention
+          models={models.filter(m => 
+            (m.display_name || m.name).toLowerCase().includes(mentionQuery)
+          )}
+          onSelectModel={handleModelSelect}
+        />
+      )}
     </div>
   )
 }

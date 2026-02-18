@@ -1,8 +1,17 @@
 import api from './api'
 
 export const chatService = {
-  async getChats() {
-    const response = await api.get('/chats/')
+  async getChats(includeMessages = true) {
+    console.log(`Fetching chats (includeMessages: ${includeMessages})...`)
+    const startTime = Date.now()
+    const response = await api.get(`/chats/?include_messages=${includeMessages}`)
+    const duration = Date.now() - startTime
+    console.log(`Chats fetched in ${duration}ms:`, response.data.length, 'chats')
+    return response.data
+  },
+
+  async getChat(chatId) {
+    const response = await api.get(`/chats/${chatId}/`)
     return response.data
   },
 
@@ -23,6 +32,11 @@ export const chatService = {
 
   async sendMessage(chatId, message) {
     const response = await api.post(`/chats/${chatId}/messages/`, message)
+    return response.data
+  },
+
+  async createDirectChat(participantId) {
+    const response = await api.post(`/chats/direct/?participant_id=${participantId}`)
     return response.data
   }
 }

@@ -4,6 +4,7 @@ import ChatWindow from './components/ChatWindow'
 import Login from './components/Login'
 import Profile from './components/Profile'
 import AdminPanel from './components/AdminPanel'
+import UserSearch from './components/UserSearch'
 import { SidebarSkeleton, ChatWindowSkeleton } from './components/LoadingSkeleton'
 import { authService } from './services/auth.service'
 import { chatService } from './services/chat.service'
@@ -16,6 +17,7 @@ function App() {
   const [user, setUser] = useState(null)
   const [showProfile, setShowProfile] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
+  const [showUserSearch, setShowUserSearch] = useState(false)
   const [chats, setChats] = useState([])
   const [activeChat, setActiveChat] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -29,32 +31,117 @@ function App() {
   const [roles, setRoles] = useState([])
 
   useEffect(() => {
+    console.log('App mounted, checking for user...')
     const initUser = authService.getCurrentUser()
+    console.log('Initial user:', initUser ? initUser.email : 'none')
     if (initUser) {
       setUser(initUser)
       loadUserData()
     } else {
       setLoading(false)
     }
+    
+    // Safety timeout: force loading to false after 65 seconds
+    const safetyTimeout = setTimeout(() => {
+      console.warn('Safety timeout triggered - forcing loading to false')
+      setLoading(false)
+      setChatsLoading(false)
+    }, 65000)
+    
+    return () => clearTimeout(safetyTimeout)
   }, [])
+
+  // Polling for new messages in active chat only (not for new chat sessions)
+  useEffect(() => {
+    if (!user || !activeChat) return
+
+    const pollInterval = setInterval(async () => {
+      try {
+        // Only reload messages for the active chat
+        const chatData = await chatService.getChat(activeChat)
+        
+        setChats(prevChats => {
+          const currentChat = prevChats.find(c => (c.id || c._id) === activeChat)
+          
+          // Check if messages have changed
+          if (currentChat && chatData.messages?.length !== currentChat.messages?.length) {
+            // Update only the active chat with new messages
+            return prevChats.map(c => 
+              (c.id || c._id) === activeChat ? chatData : c
+            )
+          }
+          
+          return prevChats
+        })
+      } catch (error) {
+        console.error('Error polling messages:', error)
+      }
+    }, 5000) // Poll every 5 seconds
+
+    return () => clearInterval(pollInterval)
+  }, [user, activeChat])
 
   const loadUserData = async () => {
     setChatsLoading(true)
     try {
+      console.log('Starting to load user data...')
+      const startTime = Date.now()
+      
+      // Load chats without messages for faster initial load
       const [chatsData, modelsData] = await Promise.all([
-        chatService.getChats(),
+        chatService.getChats(false), // false = don't include messages
         modelService.getModels()
       ])
+      
+      const duration = Date.now() - startTime
+      console.log(`Data loaded in ${duration}ms`)
+      console.log('Loaded chats:', chatsData.length)
+      console.log('Loaded models:', modelsData.length)
+      
       setChats(chatsData)
       setModels(modelsData)
+      
       if (chatsData.length > 0) {
-        setActiveChat(chatsData[0].id || chatsData[0]._id)
+        const firstChatId = chatsData[0].id || chatsData[0]._id
+        setActiveChat(firstChatId)
+        // Load messages for first chat in background
+        loadChatMessages(firstChatId)
       }
+      
+      console.log('User data loaded successfully')
     } catch (error) {
       console.error('Error loading data:', error)
+      console.error('Error details:', error.response?.data || error.message)
+      
+      // Try to load anyway with empty data
+      setChats([])
+      setModels([])
+      
+      // Show user-friendly error
+      alert(`Failed to load chats: ${error.message}. Please check the console and backend logs.`)
     } finally {
       setLoading(false)
       setChatsLoading(false)
+    }
+  }
+
+  const loadChatMessages = async (chatId) => {
+    try {
+      const chatData = await chatService.getChat(chatId)
+      setChats(prev => prev.map(c => 
+        (c.id || c._id) === chatId ? chatData : c
+      ))
+    } catch (error) {
+      console.error('Error loading chat messages:', error)
+    }
+  }
+
+  const handleSelectChat = (chatId) => {
+    setActiveChat(chatId)
+    // Load messages if not already loaded
+    const chat = chats.find(c => (c.id || c._id) === chatId)
+    if (chat && (!chat.messages || chat.messages.length === 0)) {
+      loadChatMessages(chatId)
     }
   }
 
@@ -261,6 +348,22 @@ function App() {
       <div className="app">
         <SidebarSkeleton />
         <ChatWindowSkeleton />
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#10a37f',
+          color: 'white',
+          padding: '12px 24px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+          zIndex: 9999,
+          fontSize: '14px',
+          fontWeight: '500'
+        }}>
+          Loading your chats... (Check console for details)
+        </div>
       </div>
     )
   }
@@ -409,6 +512,7 @@ function App() {
       // Check if current chat is temporary or doesn't exist
       const currentChat = chats.find(c => (c.id || c._id) === chatId)
       const isTemp = currentChat?.isTemp || !chatId
+      const isDirectChat = currentChat?.chat_type === 'direct'
       
       // If no active chat or temp chat, create a real one first
       if (isTemp || !chatId) {
@@ -426,7 +530,12 @@ function App() {
       }
       
       // Optimistically update UI immediately
-      const userMessage = { role: 'user', content, timestamp: new Date().toISOString() }
+      const userMessage = { 
+        role: 'user', 
+        content, 
+        timestamp: new Date().toISOString(),
+        sender_id: user.id  // Add sender ID for proper alignment
+      }
       setChats(prev => prev.map(chat => {
         if ((chat.id || chat._id) === chatId) {
           const newMessages = [...(chat.messages || []), userMessage]
@@ -442,6 +551,104 @@ function App() {
       chatService.sendMessage(chatId, { role: 'user', content }).catch(err => {
         console.error('Error sending message:', err)
       })
+      
+      // For direct chats, check if there's an AI model mention
+      if (isDirectChat) {
+        // Check for @modelname pattern (more flexible regex)
+        const mentionMatch = content.match(/@([^\s]+)\s+(.+)/i)
+        
+        console.log('Direct chat message:', content)
+        console.log('Mention match:', mentionMatch)
+        
+        if (mentionMatch) {
+          const [, modelName, question] = mentionMatch
+          
+          console.log('Looking for model:', modelName)
+          console.log('Available models:', models.map(m => m.display_name || m.name))
+          
+          // Find the mentioned model (case-insensitive, handle spaces)
+          const mentionedModel = models.find(m => {
+            const displayName = (m.display_name || m.name).toLowerCase().replace(/\s+/g, '')
+            const searchName = modelName.toLowerCase().replace(/\s+/g, '')
+            return displayName === searchName || displayName.includes(searchName)
+          })
+          
+          console.log('Found model:', mentionedModel)
+          
+          if (mentionedModel) {
+            // Call AI model with the question
+            try {
+              console.log('Calling AI model:', mentionedModel.name, 'with question:', question)
+              
+              const endpoint = mentionedModel.endpoint || 'https://api.openai.com/v1/chat/completions'
+              const headers = {
+                'Content-Type': 'application/json',
+                ...(mentionedModel.api_key && { 'Authorization': `Bearer ${mentionedModel.api_key}` }),
+                ...(mentionedModel.headers && mentionedModel.headers.reduce((acc, h) => ({ ...acc, [h.key]: h.value }), {}))
+              }
+              
+              console.log('Endpoint:', endpoint)
+              console.log('Headers:', headers)
+              
+              const aiResponse = await fetch(endpoint, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                  model: mentionedModel.name,
+                  messages: [{ role: 'user', content: question }],
+                  max_tokens: 1000
+                })
+              })
+              
+              console.log('AI Response status:', aiResponse.status)
+              
+              if (aiResponse.ok) {
+                const data = await aiResponse.json()
+                console.log('AI Response data:', data)
+                
+                const aiContent = data.choices?.[0]?.message?.content || 'No response from model'
+                
+                const aiMessage = { 
+                  role: 'assistant', 
+                  content: `🤖 ${mentionedModel.display_name || mentionedModel.name}: ${aiContent}`,
+                  timestamp: new Date().toISOString(),
+                  sender_id: 'ai-model'
+                }
+                
+                console.log('Adding AI message to chat:', aiMessage)
+                
+                // Add AI response to chat
+                setChats(prev => prev.map(chat => {
+                  if ((chat.id || chat._id) === chatId) {
+                    return { ...chat, messages: [...(chat.messages || []), aiMessage] }
+                  }
+                  return chat
+                }))
+                
+                // Send AI response to backend
+                chatService.sendMessage(chatId, { 
+                  role: 'assistant', 
+                  content: aiMessage.content 
+                }).catch(err => {
+                  console.error('Error sending AI response:', err)
+                })
+              } else {
+                const errorText = await aiResponse.text()
+                console.error('AI API error:', aiResponse.status, errorText)
+              }
+            } catch (error) {
+              console.error('Error calling AI model:', error)
+            }
+          } else {
+            console.log('Model not found for name:', modelName)
+          }
+        } else {
+          console.log('No mention pattern found in message')
+        }
+        
+        setSending(false)
+        return
+      }
       
       // Get the selected model
       const model = models.find(m => (m.id || m._id) === modelId)
@@ -514,6 +721,21 @@ function App() {
       setSending(false)
     }
   }
+
+  const handleChatCreated = (chat) => {
+    // Add or update chat in list
+    setChats(prev => {
+      const exists = prev.find(c => (c.id || c._id) === (chat.id || chat._id))
+      if (exists) {
+        // Chat already exists, just select it
+        return prev
+      }
+      // Add new chat to the top of the list
+      return [chat, ...prev]
+    })
+    // Immediately select the chat
+    setActiveChat(chat.id || chat._id)
+  }
   
   const generateChatTitle = async (chatId, firstMessage, model, endpoint, headers) => {
     try {
@@ -563,7 +785,7 @@ function App() {
       <Sidebar 
         chats={chats}
         activeChat={activeChat}
-        onSelectChat={setActiveChat}
+        onSelectChat={handleSelectChat}
         onNewChat={createNewChat}
         onDeleteChat={deleteChat}
         onRenameChat={renameChat}
@@ -572,6 +794,7 @@ function App() {
         onLogout={handleLogout}
         onOpenProfile={() => setShowProfile(true)}
         onOpenAdmin={() => setShowAdmin(true)}
+        onOpenUserSearch={() => setShowUserSearch(true)}
         loading={chatsLoading}
       />
       <ChatWindow 
@@ -579,12 +802,20 @@ function App() {
         onSendMessage={sendMessage}
         models={models}
         sending={sending}
+        currentUser={user}
       />
       {showProfile && (
         <Profile 
           user={user}
           onUpdateProfile={handleUpdateProfile}
           onClose={() => setShowProfile(false)}
+        />
+      )}
+      {showUserSearch && (
+        <UserSearch
+          onClose={() => setShowUserSearch(false)}
+          onChatCreated={handleChatCreated}
+          existingChats={chats}
         />
       )}
     </div>
