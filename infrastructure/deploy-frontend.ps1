@@ -16,7 +16,7 @@ npm run build
 if ($LASTEXITCODE -ne 0) { Write-Host "Build failed!" -ForegroundColor Red; exit 1 }
 
 Write-Host "Syncing to S3..." -ForegroundColor Cyan
-aws s3 sync dist/ s3://$BucketName --delete --profile $Profile --region $Region
+aws s3 sync dist/ s3://$BucketName --delete --exclude "deploys/*" --profile $Profile --region $Region
 if ($LASTEXITCODE -ne 0) { Write-Host "S3 sync failed!" -ForegroundColor Red; exit 1 }
 
 Write-Host "Invalidating CloudFront cache..." -ForegroundColor Cyan
