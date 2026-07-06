@@ -18,20 +18,22 @@ interface ChatInterfaceStackProps extends cdk.StackProps {
     instanceType: string;
     maxUsers: number;
   };
+  // Certificate must come from us-east-1 stack (required by CloudFront)
+  certificate: acm.Certificate;
 }
 
 export class ChatInterfaceStackMinimal extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ChatInterfaceStackProps) {
     super(scope, id, props);
 
-    const { config } = props;
+    const { config, certificate } = props;
 
     // ========================================
     // VPC - Simple Public Subnet Only
     // ========================================
     const vpc = new ec2.Vpc(this, 'ChatInterfaceVPC', {
       maxAzs: 2,
-      natGateways: 0, // No NAT Gateway = Save €35/month
+      natGateways: 0,
       subnetConfiguration: [
         {
           cidrMask: 24,
@@ -49,33 +51,15 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
       description: 'Security group for EC2 backend instance',
       allowAllOutbound: true,
     });
-    
-    // Allow HTTPS from CloudFront (or anywhere for simplicity)
-    ec2SecurityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(443),
-      'Allow HTTPS from anywhere'
-    );
-    
-    // Allow HTTP for backend API
-    ec2SecurityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(5000),
-      'Allow backend API access'
-    );
-    
-    // Allow SSH from your IP (optional, for debugging)
-    ec2SecurityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(22),
-      'Allow SSH (restrict to your IP in production)'
-    );
+    ec2SecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'Allow HTTPS');
+    ec2SecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(5000), 'Allow backend API');
+    ec2SecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(22), 'Allow SSH');
 
     // ========================================
     // DynamoDB Tables
     // ========================================
     const usersTable = new dynamodb.Table(this, 'UsersTable', {
-      tableName: 'chatinterface-users',
+      tableName: 'chatgenie-users',
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: true,
@@ -89,7 +73,7 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
     });
 
     const chatsTable = new dynamodb.Table(this, 'ChatsTable', {
-      tableName: 'chatinterface-chats',
+      tableName: 'chatgenie-chats',
       partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'chat_id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -109,7 +93,7 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
     });
 
     const modelsTable = new dynamodb.Table(this, 'ModelsTable', {
-      tableName: 'chatinterface-models',
+      tableName: 'chatgenie-models',
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: true,
@@ -118,7 +102,7 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
     });
 
     const rolesTable = new dynamodb.Table(this, 'RolesTable', {
-      tableName: 'chatinterface-roles',
+      tableName: 'chatgenie-roles',
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: true,
@@ -131,13 +115,12 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
     // ========================================
     const ec2Role = new iam.Role(this, 'EC2Role', {
       assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
-      description: 'IAM role for ChatInterface EC2 backend instance',
+      description: 'IAM role for ChatGenie EC2 backend instance',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'),
       ],
     });
 
-    // Grant DynamoDB permissions
     usersTable.grantReadWriteData(ec2Role);
     chatsTable.grantReadWriteData(ec2Role);
     modelsTable.grantReadWriteData(ec2Role);
@@ -148,7 +131,7 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
     // ========================================
     const eip = new ec2.CfnEIP(this, 'BackendEIP', {
       domain: 'vpc',
-      tags: [{ key: 'Name', value: 'ChatInterface-Backend-EIP' }],
+      tags: [{ key: 'Name', value: 'ChatGenie-Backend-EIP' }],
     });
 
     // ========================================
@@ -158,33 +141,20 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
     userData.addCommands(
       '#!/bin/bash',
       'set -e',
-      '',
-      '# Update system',
       'yum update -y',
-      '',
-      '# Install Python 3.11',
       'yum install -y python3.11 python3.11-pip git',
-      '',
-      '# Create application directory',
-      'mkdir -p /opt/chatinterface',
-      'cd /opt/chatinterface',
-      '',
-      '# Install CloudWatch agent',
-      'wget https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm',
-      'rpm -U ./amazon-cloudwatch-agent.rpm',
-      '',
-      '# Create systemd service',
-      'cat > /etc/systemd/system/chatinterface.service << EOF',
+      'mkdir -p /opt/chatgenie',
+      'cat > /etc/systemd/system/chatgenie.service << EOF',
       '[Unit]',
-      'Description=ChatInterface Backend API',
+      'Description=ChatGenie Backend API',
       'After=network.target',
       '',
       '[Service]',
       'Type=simple',
       'User=ec2-user',
-      'WorkingDirectory=/opt/chatinterface/backend',
-      'Environment="AWS_DEFAULT_REGION=eu-west-1"',
-      'Environment="AWS_REGION=eu-west-1"',
+      'WorkingDirectory=/opt/chatgenie/backend',
+      'Environment="AWS_DEFAULT_REGION=eu-central-1"',
+      'Environment="AWS_REGION=eu-central-1"',
       'ExecStart=/usr/bin/python3.11 run.py',
       'Restart=always',
       'RestartSec=10',
@@ -192,13 +162,12 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
       '[Install]',
       'WantedBy=multi-user.target',
       'EOF',
-      '',
-      'echo "EC2 instance setup complete"'
+      'echo "EC2 setup complete"'
     );
 
     const backendInstance = new ec2.Instance(this, 'BackendInstance', {
       vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC }, // Public subnet (no NAT needed)
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       instanceType: new ec2.InstanceType(config.instanceType),
       machineImage: ec2.MachineImage.latestAmazonLinux2023(),
       securityGroup: ec2SecurityGroup,
@@ -215,7 +184,6 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
       ],
     });
 
-    // Associate Elastic IP with EC2 instance
     new ec2.CfnEIPAssociation(this, 'EIPAssociation', {
       eip: eip.ref,
       instanceId: backendInstance.instanceId,
@@ -228,48 +196,35 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
       domainName: config.hostedZoneName,
     });
 
-    // ========================================
-    // ACM Certificate for CloudFront (us-east-1)
-    // ========================================
-    const certificate = new acm.Certificate(this, 'Certificate', {
-      domainName: config.domainName,
-      validation: acm.CertificateValidation.fromDns(hostedZone),
+    // Route53 A record for backend API → EC2 Elastic IP
+    const apiSubdomain = `api.${config.domainName}`;
+    new route53.ARecord(this, 'BackendApiRecord', {
+      zone: hostedZone,
+      recordName: apiSubdomain,
+      target: route53.RecordTarget.fromIpAddresses(eip.ref),
+      ttl: cdk.Duration.seconds(300),
     });
 
     // ========================================
     // S3 Bucket for Frontend
     // ========================================
     const frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
-      bucketName: `chatinterface-frontend-${this.account}`,
+      bucketName: `chatgenie-frontend-v2-${this.account}`,
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       autoDeleteObjects: false,
       versioned: true,
-      lifecycleRules: [
-        {
-          noncurrentVersionExpiration: cdk.Duration.days(30),
-        },
-      ],
+      lifecycleRules: [{ noncurrentVersionExpiration: cdk.Duration.days(30) }],
     });
 
     // ========================================
     // CloudFront Distribution
+    // Uses certificate from us-east-1 CertificateStack
     // ========================================
-    const originAccessIdentity = new cloudfront.OriginAccessIdentity(
-      this,
-      'FrontendOAI',
-      {
-        comment: 'OAI for ChatInterface frontend',
-      }
-    );
 
-    frontendBucket.grantRead(originAccessIdentity);
-
-    // Cache policies
     const frontendCachePolicy = new cloudfront.CachePolicy(this, 'FrontendCachePolicy', {
-      cachePolicyName: 'ChatInterfaceFrontendCache',
-      comment: 'Cache policy for static frontend assets',
+      cachePolicyName: 'ChatGenieFrontendCache',
       defaultTtl: cdk.Duration.days(1),
       maxTtl: cdk.Duration.days(365),
       minTtl: cdk.Duration.seconds(0),
@@ -281,39 +236,33 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
     });
 
     const apiCachePolicy = new cloudfront.CachePolicy(this, 'ApiCachePolicy', {
-      cachePolicyName: 'ChatInterfaceApiCache',
-      comment: 'Cache policy for API requests',
+      cachePolicyName: 'ChatGenieApiCache',
       defaultTtl: cdk.Duration.seconds(0),
       maxTtl: cdk.Duration.seconds(1),
       minTtl: cdk.Duration.seconds(0),
       enableAcceptEncodingGzip: true,
       enableAcceptEncodingBrotli: true,
-      headerBehavior: cloudfront.CacheHeaderBehavior.allowList(
-        'Authorization',
-        'Content-Type'
-      ),
+      headerBehavior: cloudfront.CacheHeaderBehavior.allowList('Authorization', 'Content-Type'),
       queryStringBehavior: cloudfront.CacheQueryStringBehavior.all(),
       cookieBehavior: cloudfront.CacheCookieBehavior.all(),
     });
 
     const distribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
-      comment: 'ChatInterface Frontend Distribution',
+      comment: 'ChatGenie Frontend Distribution',
       domainNames: [config.domainName],
-      certificate: certificate,
+      certificate,  // from us-east-1 CertificateStack
       defaultRootObject: 'index.html',
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       enableLogging: true,
       defaultBehavior: {
-        origin: new origins.S3Origin(frontendBucket, {
-          originAccessIdentity,
-        }),
+        origin: origins.S3BucketOrigin.withOriginAccessControl(frontendBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: frontendCachePolicy,
         compress: true,
       },
       additionalBehaviors: {
         '/api/*': {
-          origin: new origins.HttpOrigin(eip.ref, {
+          origin: new origins.HttpOrigin(apiSubdomain, {
             httpPort: 5000,
             protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
           }),
@@ -324,101 +273,27 @@ export class ChatInterfaceStackMinimal extends cdk.Stack {
         },
       },
       errorResponses: [
-        {
-          httpStatus: 404,
-          responseHttpStatus: 200,
-          responsePagePath: '/index.html',
-          ttl: cdk.Duration.seconds(0),
-        },
-        {
-          httpStatus: 403,
-          responseHttpStatus: 200,
-          responsePagePath: '/index.html',
-          ttl: cdk.Duration.seconds(0),
-        },
+        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.seconds(0) },
+        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.seconds(0) },
       ],
     });
 
-    // ========================================
-    // Route53 A Record for CloudFront
-    // ========================================
+    // Route53 alias for CloudFront
     new route53.ARecord(this, 'CloudFrontAliasRecord', {
       zone: hostedZone,
       recordName: config.domainName,
-      target: route53.RecordTarget.fromAlias(
-        new targets.CloudFrontTarget(distribution)
-      ),
-      comment: 'Alias record for ChatInterface CloudFront distribution',
+      target: route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution)),
     });
 
     // ========================================
     // Outputs
     // ========================================
-    new cdk.CfnOutput(this, 'VpcId', {
-      value: vpc.vpcId,
-      description: 'VPC ID',
-      exportName: 'ChatInterface-VpcId',
-    });
-
-    new cdk.CfnOutput(this, 'BackendInstanceId', {
-      value: backendInstance.instanceId,
-      description: 'Backend EC2 Instance ID',
-      exportName: 'ChatInterface-BackendInstanceId',
-    });
-
-    new cdk.CfnOutput(this, 'BackendElasticIP', {
-      value: eip.ref,
-      description: 'Backend Elastic IP',
-      exportName: 'ChatInterface-BackendEIP',
-    });
-
-    new cdk.CfnOutput(this, 'FrontendBucketName', {
-      value: frontendBucket.bucketName,
-      description: 'Frontend S3 Bucket Name',
-      exportName: 'ChatInterface-FrontendBucket',
-    });
-
-    new cdk.CfnOutput(this, 'CloudFrontDistributionId', {
-      value: distribution.distributionId,
-      description: 'CloudFront Distribution ID',
-      exportName: 'ChatInterface-CloudFrontDistributionId',
-    });
-
-    new cdk.CfnOutput(this, 'CloudFrontDomainName', {
-      value: distribution.distributionDomainName,
-      description: 'CloudFront Distribution Domain Name',
-      exportName: 'ChatInterface-CloudFrontDomain',
-    });
-
-    new cdk.CfnOutput(this, 'UsersTableName', {
-      value: usersTable.tableName,
-      description: 'DynamoDB Users Table Name',
-    });
-
-    new cdk.CfnOutput(this, 'ChatsTableName', {
-      value: chatsTable.tableName,
-      description: 'DynamoDB Chats Table Name',
-    });
-
-    new cdk.CfnOutput(this, 'ModelsTableName', {
-      value: modelsTable.tableName,
-      description: 'DynamoDB Models Table Name',
-    });
-
-    new cdk.CfnOutput(this, 'RolesTableName', {
-      value: rolesTable.tableName,
-      description: 'DynamoDB Roles Table Name',
-    });
-
-    new cdk.CfnOutput(this, 'ApplicationUrl', {
-      value: `https://${config.domainName}`,
-      description: 'Application URL',
-      exportName: 'ChatInterface-ApplicationUrl',
-    });
-
-    new cdk.CfnOutput(this, 'CertificateArn', {
-      value: certificate.certificateArn,
-      description: 'ACM Certificate ARN',
-    });
+    new cdk.CfnOutput(this, 'BackendInstanceId', { value: backendInstance.instanceId, exportName: 'ChatGenie-BackendInstanceId' });
+    new cdk.CfnOutput(this, 'BackendElasticIP', { value: eip.ref, exportName: 'ChatGenie-BackendEIP' });
+    new cdk.CfnOutput(this, 'FrontendBucketName', { value: frontendBucket.bucketName, exportName: 'ChatGenie-FrontendBucket' });
+    new cdk.CfnOutput(this, 'CloudFrontDistributionId', { value: distribution.distributionId, exportName: 'ChatGenie-CloudFrontId' });
+    new cdk.CfnOutput(this, 'CloudFrontDomainName', { value: distribution.distributionDomainName, exportName: 'ChatGenie-CloudFrontDomain' });
+    new cdk.CfnOutput(this, 'ApplicationUrl', { value: `https://${config.domainName}`, exportName: 'ChatGenie-ApplicationUrl' });
+    new cdk.CfnOutput(this, 'BackendApiUrl', { value: `https://${apiSubdomain}`, exportName: 'ChatGenie-BackendApiUrl' });
   }
 }

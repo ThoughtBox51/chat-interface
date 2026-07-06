@@ -29,21 +29,16 @@ export class ChatInterfaceStack extends cdk.Stack {
     const { config } = props;
 
     // ========================================
-    // VPC and Networking
+    // VPC and Networking (No NAT Gateway for cost savings)
     // ========================================
     const vpc = new ec2.Vpc(this, 'ChatInterfaceVPC', {
       maxAzs: 2,
-      natGateways: 1, // Cost optimization for MVP
+      natGateways: 0, // No NAT Gateway - save €35/month
       subnetConfiguration: [
         {
           cidrMask: 24,
           name: 'Public',
           subnetType: ec2.SubnetType.PUBLIC,
-        },
-        {
-          cidrMask: 24,
-          name: 'Private',
-          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
         },
       ],
     });
@@ -216,7 +211,7 @@ export class ChatInterfaceStack extends cdk.Stack {
 
     const backendInstance = new ec2.Instance(this, 'BackendInstance', {
       vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC }, // Public subnet (no NAT needed)
       instanceType: new ec2.InstanceType(config.instanceType),
       machineImage: ec2.MachineImage.latestAmazonLinux2023(),
       securityGroup: ec2SecurityGroup,
