@@ -82,7 +82,7 @@ export class ChatInterfaceStack extends cdk.Stack {
     // DynamoDB Tables
     // ========================================
     const usersTable = new dynamodb.Table(this, 'UsersTable', {
-      tableName: 'chatinterface-users',
+      tableName: 'chatgenie-users',
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: true,
@@ -96,9 +96,8 @@ export class ChatInterfaceStack extends cdk.Stack {
     });
 
     const chatsTable = new dynamodb.Table(this, 'ChatsTable', {
-      tableName: 'chatinterface-chats',
-      partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'chat_id', type: dynamodb.AttributeType.STRING },
+      tableName: 'chatgenie-chats',
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
@@ -114,9 +113,16 @@ export class ChatInterfaceStack extends cdk.Stack {
       partitionKey: { name: 'conversation_id', type: dynamodb.AttributeType.STRING },
       projectionType: dynamodb.ProjectionType.ALL,
     });
+    // Required GSI for querying chats by user (used by GET /api/chats/)
+    chatsTable.addGlobalSecondaryIndex({
+      indexName: 'user-id-index',
+      partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'updated_at', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
 
     const modelsTable = new dynamodb.Table(this, 'ModelsTable', {
-      tableName: 'chatinterface-models',
+      tableName: 'chatgenie-models',
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: true,
